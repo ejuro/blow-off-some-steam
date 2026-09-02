@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.ejuro.blow-off-some-steam",
+  "name": "Blow off some steam",
+  "version": "1.0.0",
+  "author": "ejuro",
+  "license": "MIT",
+  "description": "Pick a cartoon weapon and make a satisfying mess of particles on your desktop.",
+  "kinds": ["bar-widget"],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Blow off some steam",
+    "description": "A tiny weapon case full of harmless desktop particle effects.",
+    "category": "Fun",
+    "aliases": ["steam", "weapon", "particles", "pistol", "ak", "glock", "revolver", "mp5", "bazooka"],
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}
