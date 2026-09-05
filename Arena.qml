@@ -569,10 +569,26 @@ Item {
   function removeFallingPiece(token) {
     for (var i = 0; i < fallingPieces.count; i++) {
       if (fallingPieces.get(i).pieceToken === token) {
+        var regionId = fallingPieces.get(i).pieceRegionId
         fallingPieces.remove(i)
+        pruneRegionMarks(regionId)
         return
       }
     }
+  }
+  function pruneRegionMarks(regionId) {
+    var retained = []
+    for (var i = 0; i < carveMarks.length; i++) {
+      if (carveMarks[i].regionId !== regionId) retained.push(carveMarks[i])
+    }
+    carveMarks = retained
+    regionCarveMarks = ({})
+    carveBuckets = ({})
+    for (var markIndex = 0; markIndex < retained.length; markIndex++)
+      indexCarveMark(retained[markIndex])
+    // The surviving marks are already present in the persistent terrain
+    // image; only subsequently appended marks need painting.
+    paintedCarveCount = retained.length
   }
   function playWindowBreak() {
     windowBreakVariant = (windowBreakVariant + 1) % 6
@@ -622,6 +638,18 @@ Item {
     pendingEffects = []
     targetVisible = false
     targetRespawnTimer.stop()
+    destructibles = []
+    fallingPieces.clear()
+    destroyedRegions.clear()
+    carveMarks = []
+    carveBuckets = ({})
+    regionCarveMarks = ({})
+    paintedCarveCount = 0
+    terrainNeedsReset = true
+    terrainReady = false
+    clientGeometryJson = "[]"
+    clientGeometryReady = false
+    activeWorkspaceReady = false
     desktopSnapshot = ""
     capturePath = ""
     if (oldCapturePath.indexOf("/tmp/blow-off-some-steam-") === 0)
@@ -764,9 +792,6 @@ Item {
         renderStrategy: Canvas.Threaded
         function applyDamage(dirtyArea) {
           markDirty(dirtyArea)
-          // Calling through this Canvas-owned function avoids losing dirty
-          // scheduling across the Loader boundary on threaded render targets.
-          requestPaint()
         }
         Component.onCompleted: {
           var source = String(root.desktopSnapshot)
@@ -969,9 +994,6 @@ Item {
       anchors.fill: parent
       z: 20
       renderStrategy: Canvas.Threaded
-      // The animated effects layer changes every frame. Keeping it in an FBO
-      // avoids uploading a full-monitor software image on every AK tick.
-      renderTarget: Canvas.FramebufferObject
       onPaint: {
         var c = getContext("2d")
         c.clearRect(0, 0, width, height)
