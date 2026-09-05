@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.ejuro.blow-off-some-steam",
   "name": "Blow off some steam",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "author": "ejuro",
   "license": "MIT",
   "description": "Pick a cartoon weapon and safely wreck a frozen snapshot of your desktop.",
