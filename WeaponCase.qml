@@ -14,6 +14,8 @@ Panel {
   property var arena: null
   property bool doorsOpen: false
   property bool doorAnimationEnabled: true
+  property bool launching: false
+  property string pendingWeapon: ""
   readonly property var barIdentity: hostWidget || root
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   readonly property color accent: Color.accent
@@ -31,6 +33,9 @@ Panel {
     })
   }
   function close() {
+    launchTimer.stop()
+    launching = false
+    pendingWeapon = ""
     doorOpenTimer.stop()
     doorOpenSound.stop()
     doorsOpen = false
@@ -42,8 +47,24 @@ Panel {
     weaponHoverSound.play()
   }
   function choose(id) {
-    close()
-    if (arena) Qt.callLater(function() { arena.arm(id) })
+    if (launching) return
+    if (arena) {
+      arena.targetScreen = panel.screen
+      arena.barPosition = bar ? String(bar.position || "top") : "top"
+      arena.barThickness = bar ? Number(bar.barSize || 30) : 30
+    }
+    if (arena && arena.destructionEnabled) {
+      // Close the cabinet around the selection so capture preparation feels
+      // like an arming sequence instead of an unexplained pause.
+      pendingWeapon = id
+      launching = true
+      doorAnimationEnabled = true
+      doorsOpen = false
+      launchTimer.restart()
+    } else {
+      close()
+      if (arena) Qt.callLater(function() { arena.arm(id) })
+    }
   }
   function switchPanel(direction) {
     if (bar && typeof bar.switchPanelFrom === "function") return bar.switchPanelFrom(barIdentity, direction)
@@ -119,7 +140,7 @@ Panel {
 
     Behavior on x {
       enabled: root.doorAnimationEnabled
-      NumberAnimation { duration: 1050; easing.type: Easing.InOutCubic }
+      NumberAnimation { duration: root.launching ? 260 : 1050; easing.type: Easing.InOutCubic }
     }
 
     Rectangle {
@@ -171,6 +192,19 @@ Panel {
       root.doorsOpen = true
       doorOpenSound.stop()
       doorOpenSound.play()
+    }
+  }
+
+  Timer {
+    id: launchTimer
+    interval: 280
+    repeat: false
+    onTriggered: {
+      var id = root.pendingWeapon
+      root.pendingWeapon = ""
+      root.launching = false
+      root.controller.hide()
+      if (root.arena) Qt.callLater(function() { root.arena.arm(id) })
     }
   }
 
@@ -309,6 +343,66 @@ Panel {
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 onClicked: if (root.arena) root.arena.setTargetsEnabled(!root.arena.targetsEnabled)
+              }
+            }
+            Rectangle {
+              id: destructionToggle
+              width: parent.width
+              height: Style.space(34)
+              radius: Style.cornerRadius
+              color: destructionHover.containsMouse
+                ? Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.09)
+                : "transparent"
+              border.width: 1
+              border.color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.16)
+
+              Row {
+                anchors.left: parent.left
+                anchors.leftMargin: Style.space(8)
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: Style.space(6)
+                Rectangle {
+                  width: Style.space(14)
+                  height: width
+                  radius: Style.space(2)
+                  color: root.arena && root.arena.destructionEnabled ? root.accent : "transparent"
+                  border.width: 1
+                  border.color: root.arena && root.arena.destructionEnabled
+                    ? root.accent
+                    : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.55)
+                  Text {
+                    anchors.centerIn: parent
+                    text: "✓"
+                    visible: root.arena && root.arena.destructionEnabled
+                    color: "white"
+                    font.pixelSize: Style.space(10)
+                    font.bold: true
+                  }
+                }
+                Column {
+                  anchors.verticalCenter: parent.verticalCenter
+                  spacing: 0
+                  Text {
+                    text: "Desktop destruction"
+                    color: root.foreground
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                  }
+                  Text {
+                    text: "Freeze the desktop and make windows destructible"
+                    color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.48)
+                    font.family: root.fontFamily
+                    font.pixelSize: Math.max(9, Style.font.caption - 2)
+                  }
+                }
+              }
+
+              MouseArea {
+                id: destructionHover
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: if (root.arena) root.arena.setDestructionEnabled(!root.arena.destructionEnabled)
               }
             }
           }
