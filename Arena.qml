@@ -176,6 +176,7 @@ Item {
       smoke.push({ x: targetX, y: targetY, vx: Math.cos(smokeAngle) * smokeSpeed, vy: Math.sin(smokeAngle) * smokeSpeed - 1.2, life: 0.7 + Math.random() * 0.3, size: 7 + Math.random() * 12, kind: 7 })
     }
     pendingEffects = smoke
+    wakeSimulation()
     targetRespawnTimer.restart()
   }
   function setTargetsEnabled(enabled) {
@@ -248,6 +249,8 @@ Item {
     mp5AutomaticSound.stop()
     recoil = 0
     flash = 0
+    previousRecoil = 0
+    previousFlash = 0
     weapon = id
     weaponReadySound.stop()
     weaponReadySound.play()
@@ -604,6 +607,8 @@ Item {
   function holster() {
     var oldCapturePath = capturePath
     armed = false
+    canvas.clear()
+    particleBuffer = []
     captureInProgress = false
     pendingWeapon = ""
     captureDelay.stop()
@@ -666,10 +671,20 @@ Item {
     else pistolSound.play()
   }
   function shoot(withSound) {
-    if (!armed) return
+    if (!armed) return false
+    if (weapon === "bazooka" || weapon === "thick-bazooka") {
+      // Share the cooldown across launchers so swapping cannot bypass it.
+      // Reject extra clicks before sound, recoil, flash, or particle creation.
+      if (rocketCooldown.running) return false
+      rocketCooldown.interval = spec.interval
+      rocketCooldown.start()
+    }
     if (withSound === undefined || withSound) playWeaponSound()
     recoil = spec.recoil
     flash = 1
+    previousRecoil = recoil
+    previousFlash = flash
+    wakeSimulation()
     var angle = aimAngle * Math.PI / 180
     var cosA = Math.cos(angle)
     var sinA = Math.sin(angle)
@@ -727,6 +742,7 @@ Item {
         next.push({ x: muzzleX, y: muzzleY, vx: (1.2 + Math.random() * 2.6) * cosA + (Math.random() - 0.5) * 1.5, vy: (1.2 + Math.random() * 2.6) * sinA - Math.random() * 1.3, life: 0.55 + Math.random() * 0.3, size: 4 + Math.random() * 5, kind: 5 })
     }
     particles = next
+    return true
   }
 
   PanelWindow {
@@ -788,47 +804,7 @@ Item {
       // snapshot bridge visible underneath every transparent damage mark.
       active: root.destructionEnabled && root.armed && root.desktopSnapshot !== ""
       visible: active
-      sourceComponent: Canvas {
-        renderStrategy: Canvas.Threaded
-        function applyDamage(dirtyArea) {
-          markDirty(dirtyArea)
-        }
-        Component.onCompleted: {
-          var source = String(root.desktopSnapshot)
-          if (source) loadImage(source)
-        }
-        onImageLoaded: requestPaint()
-        onPaint: {
-          // The Loader is recreated for every captured frame. Never publish a
-          // hidden threaded backing store as ready for the visible overlay.
-          if (!root.armed) return
-          var c = getContext("2d")
-          var source = String(root.desktopSnapshot)
-          if (!source || !isImageLoaded(source)) return
-          if (root.terrainNeedsReset) {
-            c.globalCompositeOperation = "source-over"
-            c.clearRect(0, 0, width, height)
-            c.drawImage(source, 0, 0, width, height)
-            root.paintedCarveCount = 0
-            root.terrainNeedsReset = false
-          }
-          c.globalCompositeOperation = "destination-out"
-          for (var i = root.paintedCarveCount; i < root.carveMarks.length; i++) {
-            var mark = root.carveMarks[i]
-            c.save()
-            c.beginPath()
-            c.rect(mark.clipX, mark.clipY, mark.clipWidth, mark.clipHeight)
-            c.clip()
-            c.beginPath()
-            c.arc(mark.x, mark.y, mark.radius, 0, Math.PI * 2)
-            c.fill()
-            c.restore()
-          }
-          root.paintedCarveCount = root.carveMarks.length
-          c.globalCompositeOperation = "source-over"
-          root.terrainReady = true
-        }
-      }
+      sourceComponent: TerrainLayer { arena: root }
     }
 
     Repeater {
@@ -839,6 +815,7 @@ Item {
         required property real patchY
         required property real patchWidth
         required property real patchHeight
+        visible: root.destructionEnabled
         x: patchX
         y: patchY
         width: patchWidth
@@ -864,6 +841,7 @@ Item {
       visible: root.destructionEnabled
       delegate: Item {
         id: fallingPiece
+        visible: root.destructionEnabled
         required property int pieceToken
         required property string pieceRegionId
         required property real pieceX
@@ -989,121 +967,18 @@ Item {
       }
     }
 
-    Canvas {
+    EffectsLayer {
       id: canvas
       anchors.fill: parent
       z: 20
-      renderStrategy: Canvas.Threaded
-      onPaint: {
-        var c = getContext("2d")
-        c.clearRect(0, 0, width, height)
-        c.globalAlpha = 1
-
-        if (root.armed && root.targetVisible) {
-          c.fillStyle = "#eee9df"
-          c.beginPath(); c.arc(root.targetX, root.targetY, root.targetRadius, 0, Math.PI * 2); c.fill()
-          c.fillStyle = "#c92f35"
-          c.beginPath(); c.arc(root.targetX, root.targetY, root.targetRadius * 0.72, 0, Math.PI * 2); c.fill()
-          c.fillStyle = "#eee9df"
-          c.beginPath(); c.arc(root.targetX, root.targetY, root.targetRadius * 0.43, 0, Math.PI * 2); c.fill()
-          c.fillStyle = "#c92f35"
-          c.beginPath(); c.arc(root.targetX, root.targetY, root.targetRadius * 0.18, 0, Math.PI * 2); c.fill()
-        }
-
-        for (var i = 0; i < root.particles.length; i++) {
-          var p = root.particles[i]
-          c.globalAlpha = Math.max(0, p.life)
-          if (p.kind === 1) {
-            c.fillStyle = i % 3 === 0 ? "#ff4d2e" : (i % 2 === 0 ? "#ffd24a" : "#ff8a2a")
-            c.beginPath(); c.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2); c.fill()
-          } else if (p.kind === 3) {
-            var rocketAngle = Math.atan2(p.vy, p.vx)
-            c.save()
-            c.translate(p.x, p.y)
-            c.rotate(rocketAngle)
-            c.fillStyle = "#ffb52e"
-            c.beginPath(); c.moveTo(-22, 0); c.lineTo(-34, -7); c.lineTo(-30, 0); c.lineTo(-34, 7); c.closePath(); c.fill()
-            c.fillStyle = "#d7d9d2"
-            c.fillRect(-18, -3, 25, 6)
-            c.fillStyle = "#79806f"
-            c.beginPath(); c.moveTo(12, 0); c.lineTo(5, -5); c.lineTo(5, 5); c.closePath(); c.fill()
-            c.restore()
-          } else if (p.kind === 4) {
-            c.globalAlpha = Math.max(0, p.life) * 0.85
-            c.strokeStyle = p.life > 0.55 ? "#fff4ad" : "#ff6a2b"
-            c.lineWidth = Math.max(2, 14 * p.life)
-            c.beginPath(); c.arc(p.x, p.y, p.maxRadius * (1 - p.life), 0, Math.PI * 2); c.stroke()
-          } else if (p.kind === 5) {
-            c.fillStyle = "#8fd8d5cc"
-            c.beginPath(); c.arc(p.x, p.y, p.size * (1.3 - p.life), 0, Math.PI * 2); c.fill()
-          } else if (p.kind === 6) {
-            var bulletAngle = Math.atan2(p.vy, p.vx)
-            c.save()
-            c.translate(p.x, p.y)
-            c.rotate(bulletAngle)
-            c.fillStyle = "#efe0a4"
-            c.fillRect(-p.size * 1.8, -p.size * 0.52, p.size * 2.3, p.size * 1.04)
-            c.fillStyle = "#bf7b2d"
-            c.beginPath()
-            c.moveTo(p.size * 1.45, 0)
-            c.lineTo(p.size * 0.45, -p.size * 0.52)
-            c.lineTo(p.size * 0.45, p.size * 0.52)
-            c.closePath()
-            c.fill()
-            c.restore()
-          } else if (p.kind === 7) {
-            c.fillStyle = "#9da2a0"
-            c.beginPath(); c.arc(p.x, p.y, p.size * (1.35 - p.life * 0.35), 0, Math.PI * 2); c.fill()
-          } else if (p.kind === 2) {
-            c.fillStyle = "#d6a84b"
-            c.save()
-            c.translate(p.x, p.y)
-            c.rotate(p.angle)
-            c.fillRect(-p.size * 0.9, -p.size * 0.5, p.size * 1.8, p.size)
-            c.restore()
-          }
-        }
-
-        c.globalAlpha = root.armed ? 0.22 : 0
-        c.fillStyle = "#000000"
-        c.beginPath(); c.ellipse(root.gunX, root.gunY + 45, root.spec.width * root.spec.scale * 0.32, 8, 0, 0, Math.PI * 2); c.fill()
-        c.globalAlpha = 1
-
-        if (root.flash > 0) {
-          var angle = root.aimAngle * Math.PI / 180
-          var cosA = Math.cos(angle)
-          var sinA = Math.sin(angle)
-          var localX = (root.spec.muzzleX - root.spec.gripX) * root.spec.scale
-          var localY = (root.spec.muzzleY - root.spec.gripY) * root.spec.scale * (root.aimFlipped ? -1 : 1)
-          var mx = root.gunX - root.recoil * cosA + localX * cosA - localY * sinA
-          var my = root.gunY - root.recoil * sinA + localX * sinA + localY * cosA
-          c.globalAlpha = root.flash
-          c.save()
-          c.translate(mx, my)
-          c.rotate(angle)
-          if (root.spec.flashStyle === "revolver") {
-            c.fillStyle = "#fff2a0"
-            c.beginPath()
-            c.moveTo(-5, 0); c.lineTo(9, -7); c.lineTo(13, -20); c.lineTo(19, -8)
-            c.lineTo(38, -13); c.lineTo(27, 0); c.lineTo(39, 13); c.lineTo(18, 8)
-            c.lineTo(12, 21); c.lineTo(8, 7); c.closePath(); c.fill()
-            c.globalAlpha = root.flash * 0.8
-            c.fillStyle = "#ff762b"
-            c.beginPath(); c.moveTo(0, 0); c.lineTo(27, -6); c.lineTo(20, 0); c.lineTo(28, 6); c.closePath(); c.fill()
-          } else {
-            c.fillStyle = "#ffe86b"
-            c.beginPath(); c.moveTo(0,0); c.lineTo(29,-10); c.lineTo(20,0); c.lineTo(33,9); c.closePath(); c.fill()
-          }
-          c.restore()
-        }
-      }
+      arena: root
     }
 
     Image {
       visible: root.armed
       z: 30
-      x: root.gunX - root.spec.gripX * root.spec.scale - root.recoil * Math.cos(root.aimAngle * Math.PI / 180)
-      y: root.gunY - root.spec.gripY * root.spec.scale - root.recoil * Math.sin(root.aimAngle * Math.PI / 180)
+      x: root.renderGunX - root.spec.gripX * root.spec.scale - root.renderRecoil * Math.cos(root.renderAimAngle * Math.PI / 180)
+      y: root.renderGunY - root.spec.gripY * root.spec.scale - root.renderRecoil * Math.sin(root.renderAimAngle * Math.PI / 180)
       width: root.spec.width * root.spec.scale
       height: root.spec.height * root.spec.scale
       source: Qt.resolvedUrl(root.spec.image)
@@ -1129,7 +1004,7 @@ Item {
         Rotation {
           origin.x: root.spec.gripX * root.spec.scale
           origin.y: root.spec.gripY * root.spec.scale
-          angle: root.aimAngle
+          angle: root.renderAimAngle
         }
       ]
     }
@@ -1348,6 +1223,12 @@ Item {
   }
 
   Timer {
+    id: rocketCooldown
+    interval: 550
+    repeat: false
+  }
+
+  Timer {
     id: fireTimer
     interval: root.spec.interval
     repeat: true
@@ -1441,219 +1322,285 @@ Item {
     onTriggered: if (root.armed && root.targetsEnabled) root.spawnTarget()
   }
 
-  Timer {
-    interval: 16
-    running: root.armed
-    repeat: true
+  // Projectiles retain the original 16 ms step and interpolated rendering.
+  // The input-controlled weapon follows the pointer on each animation frame.
+  property bool simulationAwake: false
+  property real simulationAccumulator: 0
+  property real simulationBlend: 1
+  property var particleBuffer: []
+  property real previousRecoil: 0
+  property real previousFlash: 0
+  readonly property real renderGunX: gunX
+  readonly property real renderGunY: gunY
+  readonly property real renderAimAngle: aimAngle
+  readonly property real renderRecoil: simulationAwake ? previousRecoil + (recoil - previousRecoil) * simulationBlend : recoil
+  readonly property real renderFlash: simulationAwake ? previousFlash + (flash - previousFlash) * simulationBlend : flash
+
+  onPointerXChanged: wakeSimulation()
+  onPointerYChanged: wakeSimulation()
+  onArmedChanged: {
+    if (armed) wakeSimulation()
+    else simulationAwake = false
+  }
+
+  function wakeSimulation() {
+    if (!armed || simulationAwake) return
+    previousRecoil = recoil
+    previousFlash = flash
+    simulationAccumulator = 0
+    simulationBlend = 1
+    simulationAwake = true
+  }
+
+  function appendParticles(destination, additions) {
+    for (var i = 0; i < additions.length; i++) destination.push(additions[i])
+  }
+
+  // The input-controlled weapon follows the latest pointer every animation
+  // frame. Preserve the original 16 ms response without the extra historical
+  // interpolation delay used for autonomous particles.
+  function advanceWeapon(deltaSeconds) {
+    var followBlend = 1 - Math.pow(0.84, deltaSeconds / 0.016)
+    if (root.gunPositioned) {
+      var dx = root.pointerX - root.gunX
+      var dy = root.pointerY - root.gunY
+      var distance = Math.sqrt(dx * dx + dy * dy)
+      if (distance > 0.001) {
+        var unitX = dx / distance
+        var unitY = dy / distance
+        var targetX = root.pointerX - unitX * root.followDistance
+        var targetY = root.pointerY - unitY * root.followDistance
+        root.gunX += (targetX - root.gunX) * followBlend
+        root.gunY += (targetY - root.gunY) * followBlend
+        root.aimAngle = Math.atan2(root.pointerY - root.gunY, root.pointerX - root.gunX) * 180 / Math.PI
+        // Hysteresis prevents rapid mirror-state chatter near vertical aim.
+        if (!root.aimFlipped && (root.aimAngle > 100 || root.aimAngle < -100)) root.aimFlipped = true
+        else if (root.aimFlipped && root.aimAngle > -80 && root.aimAngle < 80) root.aimFlipped = false
+      }
+    }
+  }
+
+  function simulateStep() {
+    previousRecoil = recoil
+    previousFlash = flash
+    var hadParticleWork = root.particles.length > 0 || root.pendingEffects.length > 0
+    root.recoil *= 0.72
+    root.flash *= 0.56
+    if (root.recoil < 0.05) root.recoil = 0
+    if (root.flash < 0.02) root.flash = 0
+    var next = particleBuffer
+    next.length = 0
+    for (var i = 0; i < root.particles.length; i++) {
+      var p = root.particles[i]
+      p.previousX = p.x
+      p.previousY = p.y
+      p.previousLife = p.life
+      p.previousAngle = p.angle
+      if (p.kind === 6) {
+        var previousX = p.x
+        var previousY = p.y
+        p.x += p.vx
+        p.y += p.vy
+        // At desktop distances the initial trajectory should read as flat.
+        // Apply only a subtle drop after the first ricochet.
+        if (p.bounces > 0) p.vy += 0.025
+        p.vx *= 0.998
+        p.vy *= 0.998
+
+        if (!p.impacted) {
+          var segmentX = p.x - previousX
+          var segmentY = p.y - previousY
+          var segmentLengthSquared = segmentX * segmentX + segmentY * segmentY
+          var projection = segmentLengthSquared > 0
+            ? ((p.impactX - previousX) * segmentX + (p.impactY - previousY) * segmentY) / segmentLengthSquared
+            : 0
+          projection = Math.max(0, Math.min(1, projection))
+          var nearestX = previousX + segmentX * projection
+          var nearestY = previousY + segmentY * projection
+          var impactDx = p.impactX - nearestX
+          var impactDy = p.impactY - nearestY
+          if (impactDx * impactDx + impactDy * impactDy <= 100) {
+            var impactSpeed = Math.max(0.001, Math.sqrt(p.vx * p.vx + p.vy * p.vy))
+            root.carveRegion(p.impactRegionId, p.impactX, p.impactY, p.vx / impactSpeed, p.vy / impactSpeed, p.impactPower)
+            p.impacted = true
+            continue
+          }
+        }
+
+        var bulletRadius = p.size * 1.5
+        if (root.projectileHitsTarget(p, bulletRadius)) {
+          root.hitTarget()
+          continue
+        }
+        var bounced = false
+        if (p.x <= bulletRadius && p.vx < 0) {
+          p.x = bulletRadius
+          p.vx = -p.vx * 0.78
+          bounced = true
+        } else if (p.x >= window.width - bulletRadius && p.vx > 0) {
+          p.x = window.width - bulletRadius
+          p.vx = -p.vx * 0.78
+          bounced = true
+        }
+        if (p.y <= bulletRadius && p.vy < 0) {
+          p.y = bulletRadius
+          p.vy = -p.vy * 0.72
+          bounced = true
+        } else if (p.y >= window.height - bulletRadius && p.vy > 0) {
+          p.y = window.height - bulletRadius
+          p.vy = -p.vy * 0.68
+          p.vx *= 0.88
+          bounced = true
+        }
+        if (bounced) {
+          p.bounces += 1
+          root.carveRicochetImpact(p.x, p.y, p.vx, p.vy, p.impactPower)
+        }
+        p.life -= 0.006 + p.bounces * 0.0015
+        if (p.life > 0 && p.bounces < 7) next.push(p)
+        continue
+      }
+      if (p.kind === 2) {
+        p.x += p.vx
+        p.y += p.vy
+        p.vy += 0.45
+        p.angle += p.spin
+
+        var caseRadius = p.size
+        if (p.x <= caseRadius && p.vx < 0) {
+          p.x = caseRadius
+          p.vx = -p.vx * 0.58
+          p.spin *= -0.8
+          p.bounces += 1
+        } else if (p.x >= window.width - caseRadius && p.vx > 0) {
+          p.x = window.width - caseRadius
+          p.vx = -p.vx * 0.58
+          p.spin *= -0.8
+          p.bounces += 1
+        }
+        if (p.y <= caseRadius && p.vy < 0) {
+          p.y = caseRadius
+          p.vy = -p.vy * 0.5
+          p.bounces += 1
+        } else if (p.y >= window.height - caseRadius && p.vy > 0) {
+          p.y = window.height - caseRadius
+          p.vy = -p.vy * 0.46
+          p.vx *= 0.72
+          p.spin *= 0.7
+          p.bounces += 1
+        }
+        p.vx *= 0.992
+        p.life -= 0.018 + p.bounces * 0.002
+        if (p.life > 0 && p.bounces < 8) next.push(p)
+        continue
+      }
+      if (p.kind === 4) {
+        p.life -= 0.025
+        if (p.life > 0) next.push(p)
+        continue
+      }
+      if (p.kind === 3) {
+        var rocketPreviousX = p.x
+        var rocketPreviousY = p.y
+        p.x += p.vx
+        p.y += p.vy
+        p.age += 0.016
+        var rocketRadius = Math.max(8, p.size * 2)
+
+        if (!p.impacted) {
+          var rocketSegmentX = p.x - rocketPreviousX
+          var rocketSegmentY = p.y - rocketPreviousY
+          var rocketSegmentLengthSquared = rocketSegmentX * rocketSegmentX + rocketSegmentY * rocketSegmentY
+          var rocketProjection = rocketSegmentLengthSquared > 0
+            ? ((p.impactX - rocketPreviousX) * rocketSegmentX + (p.impactY - rocketPreviousY) * rocketSegmentY) / rocketSegmentLengthSquared
+            : 0
+          rocketProjection = Math.max(0, Math.min(1, rocketProjection))
+          var rocketNearestX = rocketPreviousX + rocketSegmentX * rocketProjection
+          var rocketNearestY = rocketPreviousY + rocketSegmentY * rocketProjection
+          var rocketImpactDx = p.impactX - rocketNearestX
+          var rocketImpactDy = p.impactY - rocketNearestY
+          if (rocketImpactDx * rocketImpactDx + rocketImpactDy * rocketImpactDy <= rocketRadius * rocketRadius) {
+            p.x = p.impactX
+            p.y = p.impactY
+            var impactBoomScale = p.boomScale || 1
+            var impactBlastRadius = 180 * impactBoomScale
+            if (root.targetWithinBlast(p.x, p.y, impactBlastRadius)) root.hitTarget()
+            root.playRocketExplosion(p)
+            root.damageDesktop(p.x, p.y, Math.round(40 * impactBoomScale), "blast", 115 * impactBoomScale)
+            appendParticles(next, root.rocketBlastParticles(p))
+            p.impacted = true
+            continue
+          }
+        }
+        if (root.projectileHitsTarget(p, rocketRadius)) {
+          root.hitTarget()
+          root.playRocketExplosion(p)
+          root.damageDesktop(p.x, p.y, Math.round(40 * (p.boomScale || 1)), "blast", 115 * (p.boomScale || 1))
+          appendParticles(next, root.rocketBlastParticles(p))
+          continue
+        }
+        if (p.x <= rocketRadius && p.vx < 0) {
+          p.x = rocketRadius
+          p.vx = -p.vx * 0.84
+        } else if (p.x >= window.width - rocketRadius && p.vx > 0) {
+          p.x = window.width - rocketRadius
+          p.vx = -p.vx * 0.84
+        }
+        if (p.y <= rocketRadius && p.vy < 0) {
+          p.y = rocketRadius
+          p.vy = -p.vy * 0.84
+        } else if (p.y >= window.height - rocketRadius && p.vy > 0) {
+          p.y = window.height - rocketRadius
+          p.vy = -p.vy * 0.84
+        }
+        if (p.age >= p.explodeAt) {
+          var boomScale = p.boomScale || 1
+          var blastRadius = 180 * boomScale
+          if (root.targetWithinBlast(p.x, p.y, blastRadius)) root.hitTarget()
+          root.playRocketExplosion(p)
+          root.damageDesktop(p.x, p.y, Math.round(40 * boomScale), "blast", 115 * boomScale)
+          appendParticles(next, root.rocketBlastParticles(p))
+        } else if (p.x > -80 && p.x < window.width + 80 && p.y > -80 && p.y < window.height + 80) next.push(p)
+        continue
+      }
+      p.x += p.vx; p.y += p.vy
+      p.vx *= 0.985; p.vy += 0.12
+      p.life -= 0.035
+      if (p.life > 0 && p.x > -80 && p.x < window.width + 80 && p.y > -80 && p.y < window.height + 80) next.push(p)
+    }
+    if (hadParticleWork) {
+      for (var pendingIndex = 0; pendingIndex < root.pendingEffects.length; pendingIndex++)
+        next.push(root.pendingEffects[pendingIndex])
+      particleBuffer = root.particles
+      root.particles = next
+      root.pendingEffects = []
+    }
+
+  }
+
+  FrameAnimation {
+    id: simulation
+    running: root.armed && root.simulationAwake
     onTriggered: {
-      var oldGunX = root.gunX
-      var oldGunY = root.gunY
-      var oldRecoil = root.recoil
-      var oldFlash = root.flash
-      var hadParticleWork = root.particles.length > 0 || root.pendingEffects.length > 0
-      if (root.gunPositioned) {
-        var dx = root.pointerX - root.gunX
-        var dy = root.pointerY - root.gunY
-        var distance = Math.sqrt(dx * dx + dy * dy)
-        if (distance > 0.001) {
-          var unitX = dx / distance
-          var unitY = dy / distance
-          var targetX = root.pointerX - unitX * root.followDistance
-          var targetY = root.pointerY - unitY * root.followDistance
-          root.gunX += (targetX - root.gunX) * 0.16
-          root.gunY += (targetY - root.gunY) * 0.16
-          root.aimAngle = Math.atan2(root.pointerY - root.gunY, root.pointerX - root.gunX) * 180 / Math.PI
-          // Hysteresis prevents rapid mirror-state chatter near vertical aim.
-          if (!root.aimFlipped && (root.aimAngle > 100 || root.aimAngle < -100)) root.aimFlipped = true
-          else if (root.aimFlipped && root.aimAngle > -80 && root.aimAngle < 80) root.aimFlipped = false
-        }
+      // Bound catch-up after a suspended compositor; ordinary missed frames
+      // still advance every physics step instead of slowing the simulation.
+      var elapsed = Math.min(frameTime, 0.064)
+      root.advanceWeapon(elapsed)
+      root.simulationAccumulator += elapsed
+      while (root.simulationAccumulator >= 0.016) {
+        root.simulateStep()
+        root.simulationAccumulator -= 0.016
       }
-      root.recoil *= 0.72
-      root.flash *= 0.56
-      if (root.recoil < 0.05) root.recoil = 0
-      if (root.flash < 0.02) root.flash = 0
-      var next = []
-      for (var i = 0; i < root.particles.length; i++) {
-        var p = root.particles[i]
-        if (p.kind === 6) {
-          var previousX = p.x
-          var previousY = p.y
-          p.x += p.vx
-          p.y += p.vy
-          // At desktop distances the initial trajectory should read as flat.
-          // Apply only a subtle drop after the first ricochet.
-          if (p.bounces > 0) p.vy += 0.025
-          p.vx *= 0.998
-          p.vy *= 0.998
-
-          if (!p.impacted) {
-            var segmentX = p.x - previousX
-            var segmentY = p.y - previousY
-            var segmentLengthSquared = segmentX * segmentX + segmentY * segmentY
-            var projection = segmentLengthSquared > 0
-              ? ((p.impactX - previousX) * segmentX + (p.impactY - previousY) * segmentY) / segmentLengthSquared
-              : 0
-            projection = Math.max(0, Math.min(1, projection))
-            var nearestX = previousX + segmentX * projection
-            var nearestY = previousY + segmentY * projection
-            var impactDx = p.impactX - nearestX
-            var impactDy = p.impactY - nearestY
-            if (impactDx * impactDx + impactDy * impactDy <= 100) {
-              var impactSpeed = Math.max(0.001, Math.sqrt(p.vx * p.vx + p.vy * p.vy))
-              root.carveRegion(p.impactRegionId, p.impactX, p.impactY, p.vx / impactSpeed, p.vy / impactSpeed, p.impactPower)
-              p.impacted = true
-              continue
-            }
-          }
-
-          var bulletRadius = p.size * 1.5
-          if (root.projectileHitsTarget(p, bulletRadius)) {
-            root.hitTarget()
-            continue
-          }
-          var bounced = false
-          if (p.x <= bulletRadius && p.vx < 0) {
-            p.x = bulletRadius
-            p.vx = -p.vx * 0.78
-            bounced = true
-          } else if (p.x >= window.width - bulletRadius && p.vx > 0) {
-            p.x = window.width - bulletRadius
-            p.vx = -p.vx * 0.78
-            bounced = true
-          }
-          if (p.y <= bulletRadius && p.vy < 0) {
-            p.y = bulletRadius
-            p.vy = -p.vy * 0.72
-            bounced = true
-          } else if (p.y >= window.height - bulletRadius && p.vy > 0) {
-            p.y = window.height - bulletRadius
-            p.vy = -p.vy * 0.68
-            p.vx *= 0.88
-            bounced = true
-          }
-          if (bounced) {
-            p.bounces += 1
-            root.carveRicochetImpact(p.x, p.y, p.vx, p.vy, p.impactPower)
-          }
-          p.life -= 0.006 + p.bounces * 0.0015
-          if (p.life > 0 && p.bounces < 7) next.push(p)
-          continue
-        }
-        if (p.kind === 2) {
-          p.x += p.vx
-          p.y += p.vy
-          p.vy += 0.45
-          p.angle += p.spin
-
-          var caseRadius = p.size
-          if (p.x <= caseRadius && p.vx < 0) {
-            p.x = caseRadius
-            p.vx = -p.vx * 0.58
-            p.spin *= -0.8
-            p.bounces += 1
-          } else if (p.x >= window.width - caseRadius && p.vx > 0) {
-            p.x = window.width - caseRadius
-            p.vx = -p.vx * 0.58
-            p.spin *= -0.8
-            p.bounces += 1
-          }
-          if (p.y <= caseRadius && p.vy < 0) {
-            p.y = caseRadius
-            p.vy = -p.vy * 0.5
-            p.bounces += 1
-          } else if (p.y >= window.height - caseRadius && p.vy > 0) {
-            p.y = window.height - caseRadius
-            p.vy = -p.vy * 0.46
-            p.vx *= 0.72
-            p.spin *= 0.7
-            p.bounces += 1
-          }
-          p.vx *= 0.992
-          p.life -= 0.018 + p.bounces * 0.002
-          if (p.life > 0 && p.bounces < 8) next.push(p)
-          continue
-        }
-        if (p.kind === 4) {
-          p.life -= 0.025
-          if (p.life > 0) next.push(p)
-          continue
-        }
-        if (p.kind === 3) {
-          var rocketPreviousX = p.x
-          var rocketPreviousY = p.y
-          p.x += p.vx
-          p.y += p.vy
-          p.age += 0.016
-          var rocketRadius = Math.max(8, p.size * 2)
-
-          if (!p.impacted) {
-            var rocketSegmentX = p.x - rocketPreviousX
-            var rocketSegmentY = p.y - rocketPreviousY
-            var rocketSegmentLengthSquared = rocketSegmentX * rocketSegmentX + rocketSegmentY * rocketSegmentY
-            var rocketProjection = rocketSegmentLengthSquared > 0
-              ? ((p.impactX - rocketPreviousX) * rocketSegmentX + (p.impactY - rocketPreviousY) * rocketSegmentY) / rocketSegmentLengthSquared
-              : 0
-            rocketProjection = Math.max(0, Math.min(1, rocketProjection))
-            var rocketNearestX = rocketPreviousX + rocketSegmentX * rocketProjection
-            var rocketNearestY = rocketPreviousY + rocketSegmentY * rocketProjection
-            var rocketImpactDx = p.impactX - rocketNearestX
-            var rocketImpactDy = p.impactY - rocketNearestY
-            if (rocketImpactDx * rocketImpactDx + rocketImpactDy * rocketImpactDy <= rocketRadius * rocketRadius) {
-              p.x = p.impactX
-              p.y = p.impactY
-              var impactBoomScale = p.boomScale || 1
-              var impactBlastRadius = 180 * impactBoomScale
-              if (root.targetWithinBlast(p.x, p.y, impactBlastRadius)) root.hitTarget()
-              root.playRocketExplosion(p)
-              root.damageDesktop(p.x, p.y, Math.round(40 * impactBoomScale), "blast", 115 * impactBoomScale)
-              next = next.concat(root.rocketBlastParticles(p))
-              p.impacted = true
-              continue
-            }
-          }
-          if (root.projectileHitsTarget(p, rocketRadius)) {
-            root.hitTarget()
-            root.playRocketExplosion(p)
-            root.damageDesktop(p.x, p.y, Math.round(40 * (p.boomScale || 1)), "blast", 115 * (p.boomScale || 1))
-            next = next.concat(root.rocketBlastParticles(p))
-            continue
-          }
-          if (p.x <= rocketRadius && p.vx < 0) {
-            p.x = rocketRadius
-            p.vx = -p.vx * 0.84
-          } else if (p.x >= window.width - rocketRadius && p.vx > 0) {
-            p.x = window.width - rocketRadius
-            p.vx = -p.vx * 0.84
-          }
-          if (p.y <= rocketRadius && p.vy < 0) {
-            p.y = rocketRadius
-            p.vy = -p.vy * 0.84
-          } else if (p.y >= window.height - rocketRadius && p.vy > 0) {
-            p.y = window.height - rocketRadius
-            p.vy = -p.vy * 0.84
-          }
-          if (p.age >= p.explodeAt) {
-            var boomScale = p.boomScale || 1
-            var blastRadius = 180 * boomScale
-            if (root.targetWithinBlast(p.x, p.y, blastRadius)) root.hitTarget()
-            root.playRocketExplosion(p)
-            root.damageDesktop(p.x, p.y, Math.round(40 * boomScale), "blast", 115 * boomScale)
-            next = next.concat(root.rocketBlastParticles(p))
-          } else if (p.x > -80 && p.x < window.width + 80 && p.y > -80 && p.y < window.height + 80) next.push(p)
-          continue
-        }
-        p.x += p.vx; p.y += p.vy
-        p.vx *= 0.985; p.vy += 0.12
-        p.life -= 0.035
-        if (p.life > 0 && p.x > -80 && p.x < window.width + 80 && p.y > -80 && p.y < window.height + 80) next.push(p)
+      root.simulationBlend = root.simulationAccumulator / 0.016
+      var dx = root.pointerX - root.gunX
+      var dy = root.pointerY - root.gunY
+      var distance = Math.sqrt(dx * dx + dy * dy)
+      var settled = !root.gunPositioned || distance <= 0.001 || Math.abs(distance - root.followDistance) < 0.01
+      if (settled && root.particles.length === 0 && root.pendingEffects.length === 0 && root.recoil === 0 && root.flash === 0) {
+        root.simulationAwake = false
+        root.simulationBlend = 1
       }
-      if (hadParticleWork) {
-        root.particles = next.concat(root.pendingEffects)
-        root.pendingEffects = []
-      }
-      var gunMoved = Math.abs(root.gunX - oldGunX) > 0.01 || Math.abs(root.gunY - oldGunY) > 0.01
-      if (hadParticleWork || gunMoved || oldRecoil > 0 || oldFlash > 0)
-        canvas.requestPaint()
+      canvas.requestPaint()
     }
   }
 

@@ -1,0 +1,41 @@
+[
+  {
+    "ticks": 375,
+    "paints": 0,
+    "maxParticles": 0,
+    "terrainPaints": 0,
+    "falls": 0,
+    "name": "aim",
+    "passnum": 0,
+    "cpu_percent": 4.9,
+    "tick_p50": 16,
+    "tick_p95": 17,
+    "tick_max": 17
+  },
+  {
+    "ticks": 375,
+    "paints": 0,
+    "maxParticles": 91,
+    "terrainPaints": 0,
+    "falls": 0,
+    "name": "auto",
+    "passnum": 0,
+    "cpu_percent": 17.5,
+    "tick_p50": 16,
+    "tick_p95": 17,
+    "tick_max": 17
+  },
+  {
+    "ticks": 375,
+    "paints": 0,
+    "maxParticles": 77,
+    "terrainPaints": 0,
+    "falls": 0,
+    "name": "destruction",
+    "passnum": 0,
+    "cpu_percent": 13.9,
+    "tick_p50": 16,
+    "tick_p95": 16,
+    "tick_max": 17
+  }
+]

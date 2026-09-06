@@ -1,0 +1,41 @@
+{
+  "default": {
+    "ticks": 375,
+    "paints": 0,
+    "maxParticles": 0,
+    "terrainPaints": 0,
+    "falls": 0,
+    "name": "aim",
+    "passnum": 0,
+    "cpu_percent": 5.2,
+    "tick_p50": 16,
+    "tick_p95": 17,
+    "tick_max": 17
+  },
+  "threaded": {
+    "ticks": 720,
+    "paints": 0,
+    "maxParticles": 0,
+    "terrainPaints": 0,
+    "falls": 0,
+    "name": "aim",
+    "passnum": 0,
+    "cpu_percent": 6.8,
+    "tick_p50": 8.0,
+    "tick_p95": 9,
+    "tick_max": 11
+  },
+  "vulkan": {
+    "ticks": 720,
+    "paints": 0,
+    "maxParticles": 0,
+    "terrainPaints": 0,
+    "falls": 0,
+    "name": "aim",
+    "passnum": 0,
+    "cpu_percent": 7.4,
+    "tick_p50": 8.0,
+    "tick_p95": 9,
+    "tick_max": 10
+  }
+}
