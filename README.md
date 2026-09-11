@@ -21,7 +21,9 @@ A playful Omarchy Shell bar widget. Open the animated weapon wardrobe and choose
 - Glock, Colt, AK-47, and MP5 rounds remain visible and ricochet off screen edges with damped momentum.
 - Ejected casings tumble and bounce independently when they reach a screen edge.
 - **Target practice** is off by default. Check it in the drawer to spawn a roaming bullseye; hit it to dissolve it into smoke and relocate it.
-- **Target practice** and **Desktop destruction** are mutually exclusive; enabling either one automatically disables the other.
+- Check **Clown siege** for a five-wave tower defense against the bar. Enemies spread across lanes, move at a speed scaled to the monitor, and a boss walks the center lane at the end of waves 3 and 5. Survive the last boss to break the siege.
+- New specialists join the clowns: **bombers** explode near the bar, **medics** heal allies, **splitters** burst into two runners, **blinkers** teleport forward, and the boss summons minions. Shoot or walk the cursor over dropped powerups (medkit, ammo, overclock, slow, coins, rare nuke). An **Airdrop** shop button spends 15 OmaCoin for a max-ammo crate that refills every gun.
+- **Target practice**, **Desktop destruction**, and **Clown siege** are mutually exclusive; enabling one automatically disables the others.
 - Rockets ricochet from screen edges and burst when the launcher recording reaches its explosion; direct hits detonate immediately, and the full blast radius can hit targets.
 - Bullet impacts leave persistent holes and cracks; rocket explosions scorch much larger areas of the captured desktop.
 - Press **Escape**, or right-click the bar icon after returning to it, to holster.

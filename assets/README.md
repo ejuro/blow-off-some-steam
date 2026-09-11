@@ -5,3 +5,9 @@ Source: [GUNS V1.01 by Arcade Island](https://arcadeisland.itch.io/guns-asset-pa
 The source page permits use and modification in personal and commercial projects. Credit is optional but appreciated. It prohibits reselling the assets individually or redistributing them as your own creation.
 
 These image files are third-party artwork and are not covered by the plugin's MIT license.
+
+## Enemy and powerup sprites
+
+The photoreal character sprites under `enemies/` and the painted item icons under `powerups/` were generated for this plugin and are covered by the plugin's MIT license. They are bundled locally; the shell never fetches them from the network.
+
+`powerups/coins.png` is the Omarchy square mark (lime `#9ECE6A` on black), derived from the distro icon so OmaCoins match the logo.

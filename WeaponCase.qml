@@ -259,7 +259,7 @@ Panel {
         Item {
           id: wardrobe
           width: parent.width
-          height: weaponGrid.implicitHeight + Style.space(20)
+          height: weaponGrid.y + weaponGrid.childrenRect.height + Style.space(10)
           clip: true
 
           Rectangle {
@@ -272,8 +272,11 @@ Panel {
 
           Column {
             id: weaponGrid
-            anchors.fill: parent
-            anchors.margins: Style.space(10)
+            // Size from children, not the parent. Filling the wardrobe
+            // created a height loop that clipped Desktop destruction.
+            x: Style.space(10)
+            y: Style.space(10)
+            width: parent.width - Style.space(20)
             spacing: Style.space(8)
 
             Row {
@@ -403,6 +406,68 @@ Panel {
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 onClicked: if (root.arena) root.arena.setDestructionEnabled(!root.arena.destructionEnabled)
+              }
+            }
+            Rectangle {
+              id: siegeToggle
+              width: parent.width
+              height: Style.space(34)
+              radius: Style.cornerRadius
+              color: siegeHover.containsMouse
+                ? Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.09)
+                : "transparent"
+              border.width: 1
+              border.color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.16)
+
+              Row {
+                anchors.left: parent.left
+                anchors.leftMargin: Style.space(8)
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: Style.space(6)
+                Rectangle {
+                  width: Style.space(14)
+                  height: width
+                  radius: Style.space(2)
+                  color: root.arena && root.arena.clownSiegeEnabled ? root.accent : "transparent"
+                  border.width: 1
+                  border.color: root.arena && root.arena.clownSiegeEnabled
+                    ? root.accent
+                    : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.55)
+                  Text {
+                    anchors.centerIn: parent
+                    text: "✓"
+                    visible: root.arena && root.arena.clownSiegeEnabled
+                    color: "white"
+                    font.pixelSize: Style.space(10)
+                    font.bold: true
+                  }
+                }
+                Column {
+                  anchors.verticalCenter: parent.verticalCenter
+                  spacing: 0
+                  Text {
+                    text: "Clown siege"
+                    textFormat: Text.PlainText
+                    color: root.foreground
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                  }
+                  Text {
+                    text: "Five waves. New enemies, powerups, hold the bar."
+                    textFormat: Text.PlainText
+                    color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.48)
+                    font.family: root.fontFamily
+                    font.pixelSize: Math.max(9, Style.font.caption - 2)
+                  }
+                }
+              }
+
+              MouseArea {
+                id: siegeHover
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: if (root.arena) root.arena.setClownSiegeEnabled(!root.arena.clownSiegeEnabled)
               }
             }
           }
