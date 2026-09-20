@@ -34,6 +34,13 @@ BarWidget {
     onLoaded: root.inject()
   }
 
+  Binding {
+    target: arenaLoader.item
+    property: "audioPreviewActive"
+    value: root.opened
+    when: !!arenaLoader.item
+  }
+
   Loader {
     id: caseLoader
     active: true
@@ -50,6 +57,13 @@ BarWidget {
     function open(): void { root.open() }
     function close(): void { root.close() }
     function toggle(): void { root.toggle() }
+    function audioStatus(): string {
+      var audio = arenaLoader.item ? arenaLoader.item.audio : null
+      if (!audio) return JSON.stringify({active: false, ready: false})
+      return JSON.stringify({active: audio.active, ready: audio.ready, failed: audio.failed,
+        workerPid: audio.workerPid, voices: Object.keys(audio.voices).length,
+        loaded: Object.keys(audio.voices).filter(function(key) { return audio.voices[key].status === RemoteSound.Ready }).length})
+    }
     function holster(): void { if (arenaLoader.item) arenaLoader.item.holster() }
   }
 

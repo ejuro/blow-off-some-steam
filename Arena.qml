@@ -2,12 +2,14 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
 import QtQuick
-import QtMultimedia
 import qs.Commons
 
 Item {
   id: root
   property bool armed: false
+  readonly property var audio: audioBridge
+  property bool audioPreviewActive: false
+  AudioBridge { id: audioBridge; active: root.armed || root.audioPreviewActive }
   property bool destructionEnabled: false
   property var targetScreen: null
   property bool captureInProgress: false
@@ -304,9 +306,9 @@ Item {
     weapon = id
     activationShadeAnimation.stop()
     activationShade = animateActivation ? 1 : 0
+    armed = true
     weaponReadySound.stop()
     weaponReadySound.play()
-    armed = true
     if (animateActivation) activationShadeAnimation.start()
     gunPositioned = false
     aimFlipped = false
@@ -1288,82 +1290,94 @@ Item {
     onTriggered: root.shoot(false)
   }
 
-  SoundEffect {
+  RemoteSound {
+    audio: root.audio
     id: pistolSound
     source: Qt.resolvedUrl("sounds/pistol-shot.wav")
     volume: 0.62
   }
 
-  SoundEffect {
+  RemoteSound {
+    audio: root.audio
     id: akSingleSound
     source: Qt.resolvedUrl("sounds/ak-single-shot.wav")
     volume: 0.56
   }
 
-  SoundEffect {
+  RemoteSound {
+    audio: root.audio
     id: mp5SingleSound
     source: Qt.resolvedUrl("sounds/mp5-single-shot.wav")
     volume: 0.56
   }
 
-  SoundEffect {
+  RemoteSound {
+    audio: root.audio
     id: mp5AutomaticSound
     source: Qt.resolvedUrl("sounds/mp5-automatic-fire.wav")
-    loops: SoundEffect.Infinite
+    loops: RemoteSound.Infinite
     volume: 0.5
   }
 
-  SoundEffect {
+  RemoteSound {
+    audio: root.audio
     id: automaticSound
     source: Qt.resolvedUrl("sounds/automatic-fire.wav")
-    loops: SoundEffect.Infinite
+    loops: RemoteSound.Infinite
     volume: 0.48
   }
 
-  SoundEffect {
+  RemoteSound {
+    audio: root.audio
     id: revolverSound
     source: Qt.resolvedUrl("sounds/revolver-shot.wav")
     volume: 0.66
   }
 
-  SoundEffect {
+  RemoteSound {
+    audio: root.audio
     id: bazookaLaunchSound
     source: Qt.resolvedUrl("sounds/bazooka-launch.wav")
     volume: 0.72
   }
 
-  SoundEffect {
+  RemoteSound {
+    audio: root.audio
     id: rocketExplosionSound
     source: Qt.resolvedUrl("sounds/bazooka-explosion.wav")
     volume: 0.76
   }
 
-  SoundEffect {
+  RemoteSound {
+    audio: root.audio
     id: targetHitSound
     source: Qt.resolvedUrl("sounds/target-hit.wav")
     volume: 0.34
   }
 
-  SoundEffect {
+  RemoteSound {
+    audio: root.audio
     id: weaponSpinSound
     source: Qt.resolvedUrl("sounds/weapon-spin.wav")
     volume: 0.30
   }
 
-  SoundEffect { id: windowBreak1; source: Qt.resolvedUrl("sounds/window-break-1.wav"); volume: 0.72 }
-  SoundEffect { id: windowBreak2; source: Qt.resolvedUrl("sounds/window-break-2.wav"); volume: 0.72 }
-  SoundEffect { id: windowBreak3; source: Qt.resolvedUrl("sounds/window-break-3.wav"); volume: 0.72 }
-  SoundEffect { id: windowBreak4; source: Qt.resolvedUrl("sounds/window-break-4.wav"); volume: 0.72 }
-  SoundEffect { id: windowBreak5; source: Qt.resolvedUrl("sounds/window-break-5.wav"); volume: 0.72 }
-  SoundEffect { id: windowBreak6; source: Qt.resolvedUrl("sounds/window-break-6.wav"); volume: 0.72 }
+  RemoteSound { audio: root.audio; id: windowBreak1; source: Qt.resolvedUrl("sounds/window-break-1.wav"); volume: 0.72 }
+  RemoteSound { audio: root.audio; id: windowBreak2; source: Qt.resolvedUrl("sounds/window-break-2.wav"); volume: 0.72 }
+  RemoteSound { audio: root.audio; id: windowBreak3; source: Qt.resolvedUrl("sounds/window-break-3.wav"); volume: 0.72 }
+  RemoteSound { audio: root.audio; id: windowBreak4; source: Qt.resolvedUrl("sounds/window-break-4.wav"); volume: 0.72 }
+  RemoteSound { audio: root.audio; id: windowBreak5; source: Qt.resolvedUrl("sounds/window-break-5.wav"); volume: 0.72 }
+  RemoteSound { audio: root.audio; id: windowBreak6; source: Qt.resolvedUrl("sounds/window-break-6.wav"); volume: 0.72 }
 
-  SoundEffect {
+  RemoteSound {
+    audio: root.audio
     id: weaponReadySound
     source: Qt.resolvedUrl("sounds/weapon-ready.wav")
     volume: 0.34
   }
 
-  SoundEffect {
+  RemoteSound {
+    audio: root.audio
     id: weaponWheelHoverSound
     source: Qt.resolvedUrl("sounds/weapon-hover.wav")
     volume: 0.22

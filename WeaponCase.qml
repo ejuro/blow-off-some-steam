@@ -1,5 +1,4 @@
 import QtQuick
-import QtMultimedia
 import qs.Commons
 import qs.Ui
 
@@ -208,13 +207,15 @@ Panel {
     }
   }
 
-  SoundEffect {
+  RemoteSound {
+    audio: root.arena ? root.arena.audio : null
     id: weaponHoverSound
     source: Qt.resolvedUrl("sounds/weapon-hover.wav")
     volume: 0.22
   }
 
-  SoundEffect {
+  RemoteSound {
+    audio: root.arena ? root.arena.audio : null
     id: doorOpenSound
     source: Qt.resolvedUrl("sounds/doors-open.wav")
     volume: 0.30

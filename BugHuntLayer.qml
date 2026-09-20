@@ -1,5 +1,4 @@
 import QtQuick
-import QtMultimedia
 
 Item {
   id: hunt
@@ -186,31 +185,34 @@ Item {
   Timer { id: bossEntrance; interval: 1; onTriggered: hunt.beginBoss() }
   function playArrival() {
     if (!bossEntering) return
-    if (arrivalSound.status === SoundEffect.Ready) arrivalSound.play()
-    if (buzzSound.status === SoundEffect.Ready) buzzSound.play()
+    if (arrivalSound.status === RemoteSound.Ready) arrivalSound.play()
+    if (buzzSound.status === RemoteSound.Ready) buzzSound.play()
   }
   Timer { id: arrivalDelay; interval: 150; onTriggered: hunt.playArrival() }
 
   Loader {
     id: musicLoader
     active: (hunt.bossActive && hunt.bossRevealed) || hunt.bossDying
-    sourceComponent: BossMusic { ending: hunt.bossDying }
+    sourceComponent: BossMusic { audio: hunt.arena.audio; ending: hunt.bossDying }
   }
 
-  SoundEffect {
+  RemoteSound {
+    audio: hunt.arena.audio
     id: arrivalSound
     source: Qt.resolvedUrl("sounds/motherfly-arrival.wav")
     volume: 0.85
-    onStatusChanged: if (status === SoundEffect.Ready && hunt.bossEntering && !arrivalDelay.running) play()
+    onStatusChanged: if (status === RemoteSound.Ready && hunt.bossEntering && !arrivalDelay.running) play()
   }
-  SoundEffect {
+  RemoteSound {
+    audio: hunt.arena.audio
     id: buzzSound
     source: Qt.resolvedUrl("sounds/motherfly-buzz.wav")
-    loops: SoundEffect.Infinite
+    loops: RemoteSound.Infinite
     volume: hunt.bossEntering ? 0.32 : hunt.bossFaltering ? 0.06 + Math.max(0, Math.sin(hunt.bossTime * 23)) * 0.16 : (hunt.bossEnraged ? 0.25 : 0.14)
-    onStatusChanged: if (status === SoundEffect.Ready && hunt.bossActive && !arrivalDelay.running) play()
+    onStatusChanged: if (status === RemoteSound.Ready && hunt.bossActive && !arrivalDelay.running) play()
   }
-  SoundEffect {
+  RemoteSound {
+    audio: hunt.arena.audio
     id: enrageSound
     source: Qt.resolvedUrl("sounds/motherfly-enrage.wav")
     volume: 0.65
@@ -221,7 +223,8 @@ Item {
 
 
   // One preloaded voice also avoids stacking four identical sounds on a blast.
-  SoundEffect {
+  RemoteSound {
+    audio: hunt.arena.audio
     id: splatSound
     source: Qt.resolvedUrl("sounds/bug-splat.wav")
     volume: 0.45

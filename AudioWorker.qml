@@ -1,0 +1,68 @@
+import QtQuick
+import QtMultimedia
+import Quickshell
+import Quickshell.Io
+
+Scope {
+  id: root
+  property var voices: ({})
+  function reply(message) { connection.write(JSON.stringify(message) + '\n'); connection.flush() }
+  function state(key, voice) { reply({event: 'state', key: key, status: voice.status, playing: voice.playing}) }
+  function receive(line) {
+    var message
+    try { message = JSON.parse(line) } catch (error) { return }
+    if (message.op === 'ping') { reply({event: 'pong'}); return }
+    var key = message.key
+    if (message.op === 'create') {
+      if (voices[key] || Object.keys(voices).length >= 64) return
+      // Only packaged audio can be opened; the bridge never accepts arbitrary media commands.
+      var prefix = String(Qt.resolvedUrl('sounds/'))
+      if (!String(message.source).startsWith(prefix) || /\.\.|%2e|%2f/i.test(message.source)) return
+      var component = message.music ? musicVoice : effectVoice
+      voices[key] = component.createObject(root, {voiceKey: key, source: message.source, volume: message.volume, loops: message.loops})
+      if (voices[key]) state(key, voices[key])
+      return
+    }
+    var voice = voices[key]
+    if (!voice) return
+    if (message.op === 'play') voice.play()
+    else if (message.op === 'stop') voice.stop()
+    else if (message.op === 'update') { voice.volume = Math.max(0, Math.min(1, message.volume)); voice.loops = message.loops }
+    else if (message.op === 'remove') { voice.stop(); voice.destroy(); delete voices[key] }
+  }
+  Socket {
+    id: connection
+    path: Quickshell.env('STEAM_AUDIO_SOCKET')
+    connected: true
+    onConnectionStateChanged: {
+      if (connected) root.reply({event: 'ready'})
+      else Qt.quit()
+    }
+    parser: SplitParser { onRead: line => root.receive(line) }
+  }
+  Component {
+    id: effectVoice
+    SoundEffect {
+      property string voiceKey
+      onStatusChanged: root.state(voiceKey, this)
+      onPlayingChanged: root.state(voiceKey, this)
+    }
+  }
+  Component {
+    id: musicVoice
+    Item {
+      id: music
+      property string voiceKey
+      property alias source: player.source
+      property alias volume: output.volume
+      property alias loops: player.loops
+      readonly property bool playing: player.playing
+      readonly property int status: player.error !== MediaPlayer.NoError ? 3 : player.mediaStatus === MediaPlayer.LoadedMedia || player.mediaStatus === MediaPlayer.BufferedMedia ? 2 : 1
+      function play() { player.play() }
+      function stop() { player.stop() }
+      onStatusChanged: root.state(voiceKey, music)
+      onPlayingChanged: root.state(voiceKey, music)
+      MediaPlayer { id: player; audioOutput: AudioOutput { id: output } }
+    }
+  }
+}

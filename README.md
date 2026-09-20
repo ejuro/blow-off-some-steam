@@ -8,7 +8,15 @@ A playful Omarchy Shell bar widget. Open the animated weapon wardrobe and choose
 
 - Omarchy with Quickshell plugin support.
 - `grim` for capturing the monitor where the weapon case was opened (included with Omarchy).
-- No additional runtime dependencies; all artwork and sounds are bundled.
+- Python 3 and the `qs` executable for the isolated audio worker (included with the tested Omarchy installation). All artwork and sounds are bundled.
+
+## Audio isolation
+
+Sound effects and music run in a separate, supervised Qt process while the weapon case or game is open. Closing both shuts it down. Audio is not initialized in the shell by this plugin while idle.
+
+If the audio process crashes, stops responding, or loses contact with the shell, it is terminated and the game continues without sound. Close the case and holster, then reopen to start a fresh audio session. A long suspend also invalidates the old session. The worker uses only packaged audio and a private local socket, with bounded message buffers and suppressed worker logging.
+
+This contains failures related to [issue #4](https://github.com/ejuro/blow-off-some-steam/issues/4); it is not a confirmed fix for the underlying Qt/PipeWire suspend/resume crash.
 
 ## Controls
 

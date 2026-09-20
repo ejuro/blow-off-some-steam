@@ -1,8 +1,8 @@
 import QtQuick
-import QtMultimedia
 
 Item {
   id: music
+  required property var audio
   property bool ending: false
   readonly property bool playing: player.playing
 
@@ -16,29 +16,29 @@ Item {
     fadeIn.stop(); fadeOut.stop(); player.stop()
   }
 
-  // Decode the compressed soundtrack as it plays; do not preload a long WAV.
-  MediaPlayer {
+  RemoteSound {
     id: player
+    audio: music.audio
     source: Qt.resolvedUrl("sounds/giant-wings.mp3")
-    loops: MediaPlayer.Infinite
-    audioOutput: AudioOutput { id: output; volume: 0 }
-    onPlaybackStateChanged: {
+    music: true
+    loops: -1
+    volume: 0
+    onPlayingChanged: {
       if (playing) {
         if (music.ending) player.stop()
         else fadeIn.restart()
       }
     }
-    onErrorOccurred: function(error, errorString) { console.warn("Motherfly soundtrack:", errorString) }
   }
   NumberAnimation {
     id: fadeIn
-    target: output; property: "volume"
+    target: player; property: "volume"
     to: 0.38; duration: 1600
     easing.type: Easing.InOutQuad
   }
   NumberAnimation {
     id: fadeOut
-    target: output; property: "volume"
+    target: player; property: "volume"
     to: 0; duration: 1200
     onFinished: player.stop()
   }
