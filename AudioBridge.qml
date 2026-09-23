@@ -56,19 +56,33 @@ Item {
 
   Process {
     id: worker
-    command: ['python3', decodeURIComponent(Qt.resolvedUrl('audio_worker.py').toString().replace(/^file:\/\//, ''))]
+    command: ['/usr/bin/python3', '-I', '-S', decodeURIComponent(Qt.resolvedUrl('audio_worker.py').toString().replace(/^file:\/\//, ''))]
+    // Clear before interpreter startup: filtering inside Python is too late for
+    // loader/Python startup hooks. Only audio connection settings are inherited.
+    clearEnvironment: true
+    environment: ({
+      PATH: '/usr/bin',
+      LANG: 'C.UTF-8',
+      XDG_RUNTIME_DIR: null,
+      PIPEWIRE_RUNTIME_DIR: null,
+      PULSE_SERVER: null
+    })
     stdinEnabled: true
     stdout: SplitParser {
       onRead: function(line) {
         try {
           var message = JSON.parse(line)
+          if (!message || typeof message !== 'object' || Array.isArray(message)) return
           if (message.event === 'ready' && !bridge.stopping) {
             bridge.ready = true
             Object.keys(bridge.voices).forEach(function(key) { bridge.send(bridge.voices[key].definition(key)) })
             var queue = bridge.pending
             bridge.pending = []
             queue.forEach(function(item) { bridge.send(item) })
-          } else if (message.event === 'state' && bridge.voices[message.key]) {
+          } else if (message.event === 'state' && typeof message.key === 'string'
+                     && Object.prototype.hasOwnProperty.call(bridge.voices, message.key)
+                     && Number.isInteger(message.status) && message.status >= 0 && message.status <= 3
+                     && typeof message.playing === 'boolean') {
             var voice = bridge.voices[message.key]
             voice.status = message.status
             voice.playing = message.playing

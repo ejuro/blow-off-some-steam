@@ -14,9 +14,6 @@ Item {
   property var targetScreen: null
   property bool captureInProgress: false
   property string pendingWeapon: ""
-  property string capturePath: ""
-  readonly property string capturePrefix: Quickshell.env("XDG_RUNTIME_DIR") + "/blow-off-some-steam-"
-  property int captureSerial: 0
   property url desktopSnapshot: ""
   property string captureError: ""
   property var destructibles: []
@@ -275,9 +272,9 @@ Item {
     paintedCarveCount = 0
     // Geometry and wallpaper lookup can run while the compositor settles;
     // only the actual screenshot needs to wait for the drawer to disappear.
-    clientQueryProcess.exec(["hyprctl", "clients", "-j"])
-    workspaceQueryProcess.exec(["hyprctl", "monitors", "-j"])
-    wallpaperQueryProcess.exec(["readlink", "-f", Quickshell.env("HOME") + "/.local/state/omarchy/current/background"])
+    clientQueryProcess.exec(["/usr/bin/hyprctl", "clients", "-j"])
+    workspaceQueryProcess.exec(["/usr/bin/hyprctl", "monitors", "-j"])
+    wallpaperQueryProcess.exec(["/usr/bin/readlink", "-f", "--", Quickshell.env("HOME") + "/.local/state/omarchy/current/background"])
     captureDelay.restart()
   }
   function swapWeapon(id) {
@@ -336,9 +333,8 @@ Item {
     captureError = message
     var id = pendingWeapon
     pendingWeapon = ""
-    var failedCapturePath = capturePath
+    captureProcess.running = false
     desktopSnapshot = ""
-    capturePath = ""
     destructibles = []
     // Never cover the real workspace with the wallpaper fallback when a
     // screencopy cannot be decoded. Keep the selected weapon usable in the
@@ -346,8 +342,6 @@ Item {
     setDestructionEnabled(false)
     console.warn("Desktop destruction disabled: " + message)
     equip(id, false)
-    if (failedCapturePath.indexOf(capturePrefix) === 0)
-      captureCleanupProcess.exec(["rm", "-f", failedCapturePath])
   }
   function tryFinishCapture() {
     if (!captureInProgress || snapshotImage.status !== Image.Ready || !clientGeometryReady || !activeWorkspaceReady) return
@@ -646,7 +640,6 @@ Item {
     }
   }
   function holster() {
-    var oldCapturePath = capturePath
     armed = false
     canvas.clear()
     particleBuffer = []
@@ -654,7 +647,6 @@ Item {
     pendingWeapon = ""
     captureDelay.stop()
     if (captureProcess.running) captureProcess.running = false
-    if (capturePermissionProcess.running) capturePermissionProcess.running = false
     weaponWheelOpen = false
     weaponWheelSelection = -1
     keyboardWeaponWheel = false
@@ -697,9 +689,6 @@ Item {
     clientGeometryReady = false
     activeWorkspaceReady = false
     desktopSnapshot = ""
-    capturePath = ""
-    if (oldCapturePath.indexOf(capturePrefix) === 0)
-      captureCleanupProcess.exec(["rm", "-f", oldCapturePath])
   }
   function playWeaponSound() {
     if (weapon === "mp5a3") mp5SingleSound.play()
@@ -1681,55 +1670,33 @@ Item {
     interval: 220
     repeat: false
     onTriggered: {
-      // XDG_RUNTIME_DIR is the session's user-only (0700) directory. Keep
-      // captures private from creation, including before chmod completes.
-      var runtimeDir = Quickshell.env("XDG_RUNTIME_DIR")
-      if (!runtimeDir || runtimeDir[0] !== "/" || runtimeDir === "/") {
-        root.abortCapture("Private runtime directory is unavailable")
-        return
-      }
       var screenName = root.targetScreen ? String(root.targetScreen.name || "") : ""
-      var safeName = screenName.replace(/[^A-Za-z0-9_.-]/g, "_") || "default"
-      root.captureSerial += 1
-      // A unique URL is essential: Canvas.loadImage caches by URL even when
-      // the file at that path has been replaced on another workspace.
-      root.capturePath = root.capturePrefix + safeName + "-" + root.captureSerial + "-" + Date.now() + ".ppm"
-      var command = ["grim"]
-      if (screenName !== "") command.push("-o", screenName)
-      // PPM avoids the expensive full-resolution PNG compression/decode path.
-      // The file lives only in the private runtime directory.
-      command.push("-s", "1", "-t", "ppm")
-      command.push(root.capturePath)
-      captureProcess.exec(command)
+      captureProcess.exec(['/usr/bin/python3', '-I', '-S',
+        decodeURIComponent(Qt.resolvedUrl('capture_worker.py').toString().replace(/^file:\/\//, '')),
+        screenName])
     }
   }
 
-  Process {
+  DesktopProcess {
     id: captureProcess
-    onExited: function(exitCode, exitStatus) {
-      if (!root.captureInProgress) return
-      if (exitCode === 0) {
-        capturePermissionProcess.exec(["chmod", "600", root.capturePath])
-      } else {
-        root.abortCapture("Desktop capture failed")
+    stdinEnabled: true
+    stdout: SplitParser {
+      onRead: function(line) {
+        if (!root.captureInProgress) return
+        try {
+          var message = JSON.parse(line)
+          if (typeof message.url === 'string' && message.url.indexOf('file:///') === 0)
+            root.desktopSnapshot = message.url
+          else root.abortCapture("Invalid desktop snapshot response")
+        } catch (error) { root.abortCapture("Invalid desktop snapshot response") }
       }
     }
-  }
-
-  Process {
-    id: capturePermissionProcess
     onExited: function(exitCode, exitStatus) {
-      if (!root.captureInProgress) return
-      if (exitCode === 0)
-        root.desktopSnapshot = "file://" + root.capturePath
-      else
-        root.abortCapture("Could not secure the desktop snapshot")
+      if (root.captureInProgress) root.abortCapture("Desktop capture failed")
     }
   }
 
-  Process { id: captureCleanupProcess }
-
-  Process {
+  DesktopProcess {
     id: clientQueryProcess
     stdout: StdioCollector {
       id: clientQueryOutput
@@ -1742,7 +1709,7 @@ Item {
     }
   }
 
-  Process {
+  DesktopProcess {
     id: workspaceQueryProcess
     stdout: StdioCollector {
       id: workspaceQueryOutput
@@ -1774,7 +1741,7 @@ Item {
     }
   }
 
-  Process {
+  DesktopProcess {
     id: wallpaperQueryProcess
     stdout: StdioCollector {
       waitForEnd: true

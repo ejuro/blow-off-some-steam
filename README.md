@@ -12,11 +12,17 @@ A playful Omarchy Shell bar widget. Open the animated weapon wardrobe and choose
 
 ## Audio isolation
 
+The audio launcher uses the system executables `/usr/bin/python3` and `/usr/bin/qs`, with no PATH-based fallback. Python starts in isolated mode with site initialization disabled. Both processes receive a minimal environment; only `XDG_RUNTIME_DIR`, `PIPEWIRE_RUNTIME_DIR`, and `PULSE_SERVER` are inherited to locate the audio service. The worker uses temporary private home/configuration/cache directories. Custom Python, Qt/QML, library, and PipeWire configuration overrides are not forwarded.
+
 Sound effects and music run in a separate, supervised Qt process while the weapon case or game is open. Closing both shuts it down. Audio is not initialized in the shell by this plugin while idle.
 
 If the audio process crashes, stops responding, or loses contact with the shell, it is terminated and the game continues without sound. Close the case and holster, then reopen to start a fresh audio session. A long suspend also invalidates the old session. The worker uses only packaged audio and a private local socket, with bounded message buffers and suppressed worker logging.
 
 This contains failures related to [issue #4](https://github.com/ejuro/blow-off-some-steam/issues/4); it is not a confirmed fix for the underlying Qt/PipeWire suspend/resume crash.
+
+## Desktop capture privacy
+
+Desktop destruction is opt-in. Its helpers use absolute system executable paths and a minimal environment. A supervised capture helper requires a user-owned runtime directory with mode `0700`, creates an unpredictable snapshot exclusively with mode `0600`, and directs `grim` into that already-open file. It never follows or overwrites an existing snapshot. Capturing is limited to 15 seconds and 256 MiB. Holstering, cancellation, and normal shell termination remove the snapshot; forcibly killing the capture helper itself can leave a private file until the runtime directory is cleared at logout/reboot. The game does not delete or modify real windows or user documents.
 
 ## Controls
 

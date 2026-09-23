@@ -11,13 +11,22 @@ Scope {
   function receive(line) {
     var message
     try { message = JSON.parse(line) } catch (error) { return }
+    if (!message || typeof message !== 'object' || Array.isArray(message)) return
     if (message.op === 'ping') { reply({event: 'pong'}); return }
     var key = message.key
+    if (typeof key !== 'string' || !/^voice-[0-9]{1,26}$/.test(key)) return
+    if (message.op === 'create' || message.op === 'update') {
+      if (typeof message.volume !== 'number' || !isFinite(message.volume)
+          || message.volume < 0 || message.volume > 1
+          || !Number.isInteger(message.loops) || message.loops < -2 || message.loops > 1000) return
+    }
     if (message.op === 'create') {
       if (voices[key] || Object.keys(voices).length >= 64) return
       // Only packaged audio can be opened; the bridge never accepts arbitrary media commands.
       var prefix = String(Qt.resolvedUrl('sounds/'))
-      if (!String(message.source).startsWith(prefix) || /\.\.|%2e|%2f/i.test(message.source)) return
+      if (typeof message.music !== 'boolean' || typeof message.source !== 'string'
+          || !message.source.startsWith(prefix)
+          || !/^[A-Za-z0-9][A-Za-z0-9_-]*\.(wav|mp3)$/.test(message.source.slice(prefix.length))) return
       var component = message.music ? musicVoice : effectVoice
       voices[key] = component.createObject(root, {voiceKey: key, source: message.source, volume: message.volume, loops: message.loops})
       if (voices[key]) state(key, voices[key])

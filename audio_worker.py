@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3 -I
 """Own a disposable Qt audio process; bridge the shell's private stdio protocol."""
 import ctypes
 import json
@@ -7,12 +7,35 @@ from pathlib import Path
 import select
 import signal
 import socket
+import struct
 import subprocess
 import sys
 import tempfile
 import time
 
 LIMIT = 65536
+
+
+def worker_peer(connection, expected_pid):
+    pid, uid, _ = struct.unpack('3i', connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
+    return pid == expected_pid and uid == os.getuid()
+
+
+def worker_response(message):
+    """Only the documented, typed state protocol may cross back into the shell."""
+    if not isinstance(message, dict):
+        return None
+    event = message.get('event')
+    if event in ('ready', 'pong'):
+        return {'event': event}
+    key = message.get('key')
+    status = message.get('status')
+    playing = message.get('playing')
+    if (event == 'state' and isinstance(key, str) and key.startswith('voice-')
+            and key[6:].isascii() and key[6:].isdigit() and len(key) <= 32
+            and type(status) is int and 0 <= status <= 3 and type(playing) is bool):
+        return dict(event=event, key=key, status=status, playing=playing)
+    return None
 
 
 def now():
@@ -44,18 +67,21 @@ def main():
             listener.bind(address)
             listener.listen(1)
             listener.setblocking(False)
-            env = dict(os.environ)
-            # Isolate Quickshell logs/locks while retaining access to the user's audio server.
-            runtime = env.get('XDG_RUNTIME_DIR', f'/run/user/{os.getuid()}')
-            env.update(STEAM_AUDIO_SOCKET=address, XDG_RUNTIME_DIR=directory,
-                       PIPEWIRE_RUNTIME_DIR=env.get('PIPEWIRE_RUNTIME_DIR', runtime),
-                       PULSE_SERVER=env.get('PULSE_SERVER', 'unix:' + runtime + '/pulse/native'),
+            # Build from scratch, never forward interpreter/library/plugin search
+            # settings. Keep configuration and logs private to this audio session.
+            runtime = os.environ.get('XDG_RUNTIME_DIR') or f'/run/user/{os.getuid()}'
+            env = dict(PATH='/usr/bin', LANG='C.UTF-8', HOME=directory,
+                       XDG_CONFIG_HOME=directory, XDG_CACHE_HOME=directory,
+                       XDG_DATA_HOME=directory,
+                       STEAM_AUDIO_SOCKET=address, XDG_RUNTIME_DIR=directory,
+                       PIPEWIRE_RUNTIME_DIR=os.environ.get('PIPEWIRE_RUNTIME_DIR') or runtime,
+                       PULSE_SERVER=os.environ.get('PULSE_SERVER') or 'unix:' + runtime + '/pulse/native',
                        QT_QPA_PLATFORM='offscreen', QT_QPA_PLATFORMTHEME='basic',
                        QSG_RHI_BACKEND='software', QT_LOGGING_RULES='*=false')
             try:
                 supervisor_pid = os.getpid()
                 child = subprocess.Popen(
-                    ['qs', '--path', str(Path(__file__).with_name('AudioWorker.qml')), '--log-rules', '*=false'],
+                    ['/usr/bin/qs', '--path', str(Path(__file__).with_name('AudioWorker.qml')), '--log-rules', '*=false'],
                     env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL, start_new_session=True, preexec_fn=lambda: child_setup(supervisor_pid))
                 os.set_blocking(0, False)
@@ -83,7 +109,7 @@ def main():
                             line, incoming = incoming.split(b'\n', 1)
                             try:
                                 message = json.loads(line)
-                            except (ValueError, UnicodeDecodeError):
+                            except (ValueError, UnicodeDecodeError, RecursionError):
                                 continue
                             if not isinstance(message, dict):
                                 continue
@@ -91,8 +117,12 @@ def main():
                                 last_ping = now()
                             outgoing += line + b'\n'
                     if listener in readable:
-                        connection, _ = listener.accept()
-                        connection.setblocking(False)
+                        candidate, _ = listener.accept()
+                        if worker_peer(candidate, child.pid):
+                            connection = candidate
+                            connection.setblocking(False)
+                        else:
+                            candidate.close()
                     if connection and connection in readable:
                         data = connection.recv(8192)
                         if not data:
@@ -103,15 +133,15 @@ def main():
                         while b'\n' in response_lines:
                             line, response_lines = response_lines.split(b'\n', 1)
                             try:
-                                response = json.loads(line)
-                            except (ValueError, UnicodeDecodeError):
+                                response = worker_response(json.loads(line))
+                            except (ValueError, UnicodeDecodeError, RecursionError):
                                 continue
-                            if not isinstance(response, dict):
+                            if response is None:
                                 continue
                             if response.get('event') in ('ready', 'pong'):
                                 last_response = now()
                             if response.get('event') != 'pong':
-                                replies += line + b'\n'
+                                replies += json.dumps(response, separators=(',', ':')).encode() + b'\n'
                     if connection and connection in writable:
                         outgoing = outgoing[connection.send(outgoing):]
                     if 1 in writable:
