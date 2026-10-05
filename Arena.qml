@@ -4,6 +4,8 @@ import Quickshell.Wayland
 import QtQuick
 import qs.Commons
 import "SaberGeometry.js" as Saber
+import "CutGeometry.js" as Cut
+import "DesktopMarks.js" as Marks
 
 Item {
   id: root
@@ -191,7 +193,7 @@ Item {
     saberHeld = true
     stopSaberLoops()
     saberRetractSound.stop(); saberIgniteSound.stop(); saberIgniteSound.play()
-    saberSwingLowSound.play(); saberSwingHighSound.play()
+    saberSwingLowSound.play(); saberSwingHighSound.play(); saberSizzleSound.play()
     saberHumDelay.restart()
     wakeSimulation()
     return true
@@ -200,20 +202,22 @@ Item {
     if (!saberHeld) return
     saberHeld = false
     stopSaberLoops()
+    saberStrokes = ({})
     saberIgniteSound.stop(); saberRetractSound.stop(); saberRetractSound.play()
     wakeSimulation()
   }
   function stopSaberLoops() {
     saberHumDelay.stop(); saberHumFadeIn.stop()
-    saberHumSound.stop(); saberSwingLowSound.stop(); saberSwingHighSound.stop()
-    saberSwing = 0; saberHumLevel = 0; saberMixClock = 0
-    saberHumSound.volume = 0; saberSwingLowSound.volume = 0; saberSwingHighSound.volume = 0
+    saberHumSound.stop(); saberSwingLowSound.stop(); saberSwingHighSound.stop(); saberSizzleSound.stop()
+    saberSwing = 0; saberHumLevel = 0; saberMixClock = 0; saberContact = 0
+    saberHumSound.volume = 0; saberSwingLowSound.volume = 0; saberSwingHighSound.volume = 0; saberSizzleSound.volume = 0
   }
   // Immediate and silent: weapon swaps, the wheel, focus loss, and holstering.
   function cancelSaber() {
     saberHeld = false; saberIgnition = 0; saberSpeed = 0
     saberClashCooldown = 0
     saberPrevious = null; saberTrail = []
+    saberStrokes = ({}); saberHeat = []
     stopSaberLoops()
     saberIgniteSound.stop()
   }
@@ -227,10 +231,111 @@ Item {
     setSaberVoice(saberHumSound, saberVolume * saberHumLevel * (1 - 0.3 * saberSwing))
     setSaberVoice(saberSwingLowSound, saberVolume * Math.min(1, saberSwing * 1.5))
     setSaberVoice(saberSwingHighSound, saberVolume * Math.pow(saberSwing, 2.2))
+    setSaberVoice(saberSizzleSound, saberVolume * 0.6 * saberContact)
   }
   // Volume changes cross the audio bridge, so skip ones too small to hear.
   function setSaberVoice(sound, volume) {
     if (Math.abs(sound.volume - volume) > 0.01 || (volume === 0 && sound.volume !== 0)) sound.volume = volume
+  }
+  // Lightsaber cuts in desktop destruction. The blade tip is the cutting edge:
+  // where it travels inside a window it burns a groove (a thin slit, a charred
+  // rim, and a glowing edge that cools), and when it enters a window through
+  // one edge and leaves through another, the window is cut along that line and
+  // the smaller piece falls. The rest stays up and can be cut again.
+  property var saberStrokes: ({})
+  property var saberHeat: []
+  property real saberContact: 0
+  readonly property real saberHeatLife: 1.5
+  function saberCutDesktop(previous, blade) {
+    var a = previous.tip, dx = blade.tip.x - a.x, dy = blade.tip.y - a.y
+    var contact = null, severed = false
+    var regions = destructibles
+    for (var i = 0; i < regions.length; i++) {
+      var region = regions[i]
+      if (region.destroyed) { delete saberStrokes[region.id]; continue }
+      var span = Cut.clipLine(region.poly, a.x, a.y, dx, dy, 0, 1)
+      if (!span) { delete saberStrokes[region.id]; continue }
+      var entry = {x: a.x + dx * span.enter, y: a.y + dy * span.enter}
+      var exit = {x: a.x + dx * span.exit, y: a.y + dy * span.exit}
+      contact = exit
+      // A tip that ignites or starts inside a window can only groove it.
+      var stroke = span.enter > 0 ? {entry: entry} : (saberStrokes[region.id] || {entry: null})
+      burnGroove(region, entry, exit)
+      if (span.exit < 1) {
+        delete saberStrokes[region.id]
+        if (stroke.entry && severRegion(region, stroke.entry, exit)) severed = true
+      } else saberStrokes[region.id] = stroke
+    }
+    if (severed) destructibles = destructibles.slice()
+    return contact
+  }
+  function addRegionMark(mark) {
+    carveMarks.push(mark)
+    indexCarveMark(mark)
+  }
+  function burnGroove(region, p, q) {
+    var length = Math.hypot(q.x - p.x, q.y - p.y)
+    if (length < 0.75) return
+    var clip = Cut.copy(region.poly)
+    var centreX = (p.x + q.x) / 2, centreY = (p.y + q.y) / 2
+    // A charred halo, a dim ember rim, then the slit through the window on top.
+    var widths = [{type: "scorch", width: 9}, {type: "ember", width: 4.5}, {type: "slit", width: 2.5}]
+    for (var i = 0; i < widths.length; i++) {
+      addRegionMark({ type: widths[i].type, regionId: region.id, width: widths[i].width,
+        x0: p.x, y0: p.y, x1: q.x, y1: q.y, clipPoly: clip,
+        x: centreX, y: centreY, radius: length / 2 + widths[i].width,
+        clipX: region.x, clipY: region.y, clipWidth: region.width, clipHeight: region.height })
+    }
+    addHeat(p, q)
+    if (terrainCanvasLoader.item)
+      terrainCanvasLoader.item.applyDamage(Qt.rect(Math.min(p.x, q.x) - 10, Math.min(p.y, q.y) - 10,
+                                                   Math.abs(q.x - p.x) + 20, Math.abs(q.y - p.y) + 20))
+  }
+  function addHeat(p, q) {
+    var heat = saberHeat.length >= 96 ? saberHeat.slice(saberHeat.length - 95) : saberHeat.slice()
+    heat.push({x0: p.x, y0: p.y, x1: q.x, y1: q.y, age: 0})
+    saberHeat = heat
+  }
+  function severRegion(region, p, q) {
+    if (Math.hypot(q.x - p.x, q.y - p.y) < 12) return false
+    var halves = Cut.split(region.poly, p, q)
+    if (!halves[0].length || !halves[1].length) return false
+    var areas = [Cut.area(halves[0]), Cut.area(halves[1])]
+    if (Math.min(areas[0], areas[1]) < 150) return false
+    var fall = areas[0] < areas[1] ? 0 : 1
+    var piece = halves[fall], keep = halves[1 - fall]
+    var box = Cut.bounds(piece)
+    // The piece drifts away from the cut and tips over as it falls.
+    var centre = {x: box.x + box.width / 2, y: box.y + box.height / 2}
+    var normalX = -(q.y - p.y), normalY = q.x - p.x
+    var away = (centre.x - p.x) * normalX + (centre.y - p.y) * normalY >= 0 ? 1 : -1
+    var normalLength = Math.max(0.001, Math.hypot(normalX, normalY))
+    var driftX = away * normalX / normalLength
+    dropPiece(region, piece, (60 + Math.random() * 90) * driftX, (driftX >= 0 ? 1 : -1) * (14 + Math.random() * 22),
+              [p.x - box.x, p.y - box.y, q.x - box.x, q.y - box.y], false)
+    addRegionMark({ type: "cut", regionId: region.id, points: Cut.copy(piece),
+      x: centre.x, y: centre.y, radius: Math.hypot(box.width, box.height) / 2 + 2,
+      clipX: region.x, clipY: region.y, clipWidth: region.width, clipHeight: region.height })
+    if (terrainCanvasLoader.item) terrainCanvasLoader.item.applyDamage(Qt.rect(box.x, box.y, box.width, box.height))
+    region.poly = keep
+    addHeat(p, q)
+    saberCutSound.stop(); saberCutSound.play()
+    // A sliver too small to stand on its own falls too.
+    if (Cut.area(keep) < 2500) destroyRegion(region, true)
+    return true
+  }
+  function saberSparks(point, swingX, swingY) {
+    var sparks = []
+    var swing = Math.max(1, Math.hypot(swingX, swingY))
+    for (var i = 0; i < 2; i++) {
+      // Thrown back against the swing, with some scatter and a little lift.
+      var speed = 2 + Math.random() * 4.5
+      var angle = Math.atan2(-swingY, -swingX) + (Math.random() - 0.5) * 1.6
+      if (swing < 2) angle = -Math.PI / 2 + (Math.random() - 0.5) * 2.4
+      sparks.push({ x: point.x, y: point.y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed - 1,
+                    life: 0.45 + Math.random() * 0.35, size: 1.2 + Math.random() * 1.6, kind: 1 })
+    }
+    pendingEffects = pendingEffects.concat(sparks)
   }
   function advanceSaber(dt) {
     if (weapon !== "lightsaber" || dt <= 0) return
@@ -238,6 +343,7 @@ Item {
     if (saberHeld) saberIgnition = Math.min(1, saberIgnition + dt / 0.13)
     else saberIgnition = Math.max(0, saberIgnition - dt / 0.35)
     var trail = saberTrail.filter(function(sample) { sample.age += dt; return sample.age < 0.13 })
+    if (saberHeat.length) saberHeat = saberHeat.filter(function(heat) { heat.age += dt; return heat.age < saberHeatLife })
     if (saberIgnition === 0) {
       saberPrevious = null; saberSpeed = 0
       saberTrail = trail
@@ -251,10 +357,10 @@ Item {
     var struck = false
     if (bugHuntEnabled && bugLayerLoader.item && bugLayerLoader.item.hitSaber(previous, blade)) struck = true
     if (targetsEnabled && targetVisible && Saber.hits(targetX, targetY, targetRadius + 6, previous, blade)) { hitTarget(); struck = true }
-    if (destructionEnabled) {
-      if (damageDesktopRay(blade.base.x, blade.base.y, blade.tip.x, blade.tip.y, 6)) struck = true
-      if (damageDesktopRay(previous.tip.x, previous.tip.y, blade.tip.x, blade.tip.y, 6)) struck = true
-    }
+    // Desktop windows are cut, not struck: grooves, sparks, and a sizzle instead of a clash.
+    var contact = destructionEnabled && saberHeld ? saberCutDesktop(previous, blade) : null
+    saberContact = contact ? 1 : Math.max(0, saberContact - dt / 0.08)
+    if (contact) saberSparks(contact, blade.tip.x - previous.tip.x, blade.tip.y - previous.tip.y)
     // A short cooldown keeps one sweep through several flies to a single clash.
     if (struck && saberClashCooldown === 0) {
       var clash = Math.random() < 0.5 ? saberClashSound : saberClashSound2
@@ -316,6 +422,19 @@ Item {
     id: saberClashSound2
     audio: root.audio
     source: Qt.resolvedUrl("sounds/saber-clash-2.wav")
+    volume: root.saberVolume
+  }
+  RemoteSound {
+    id: saberSizzleSound
+    audio: root.audio
+    source: Qt.resolvedUrl("sounds/saber-sizzle.wav")
+    loops: RemoteSound.Infinite
+    volume: 0
+  }
+  RemoteSound {
+    id: saberCutSound
+    audio: root.audio
+    source: Qt.resolvedUrl("sounds/saber-cut.wav")
     volume: root.saberVolume
   }
   RemoteSound {
@@ -594,43 +713,10 @@ Item {
     } catch (error) {
       console.warn("Blow off some steam: could not read window geometry", error)
     }
+    for (var r = 0; r < regions.length; r++)
+      regions[r].poly = Cut.rect(regions[r].x, regions[r].y, regions[r].width, regions[r].height)
     destructibles = regions
     console.info("Desktop destruction prepared " + regions.length + " regions")
-  }
-  function damageDesktopRay(x0, y0, x1, y1, radius) {
-    if (!destructionEnabled) return false
-    var dx = x1 - x0, dy = y1 - y0
-    var regions = destructibles.slice()
-    var changed = false
-    for (var i = 0; i < regions.length; i++) {
-      var region = regions[i]
-      if (region.destroyed) continue
-      // Clip this frame's beam segment against the rectangle enlarged by
-      // the beam radius. This catches thin and overlapping windows too.
-      var minX = region.x - radius, maxX = region.x + region.width + radius
-      var minY = region.y - radius, maxY = region.y + region.height + radius
-      var enter = 0, leave = 1
-      if (Math.abs(dx) < 0.0001) {
-        if (x0 < minX || x0 > maxX) continue
-      } else {
-        var tx0 = (minX - x0) / dx, tx1 = (maxX - x0) / dx
-        enter = Math.max(enter, Math.min(tx0, tx1))
-        leave = Math.min(leave, Math.max(tx0, tx1))
-      }
-      if (Math.abs(dy) < 0.0001) {
-        if (y0 < minY || y0 > maxY) continue
-      } else {
-        var ty0 = (minY - y0) / dy, ty1 = (maxY - y0) / dy
-        enter = Math.max(enter, Math.min(ty0, ty1))
-        leave = Math.min(leave, Math.max(ty0, ty1))
-      }
-      if (enter > leave) continue
-      region.hits = Math.max(region.hits, region.limit)
-      destroyRegion(region)
-      changed = true
-    }
-    if (changed) destructibles = regions
-    return changed
   }
   function damageDesktop(x, y, amount, style, radius) {
     var next = destructibles.slice()
@@ -667,7 +753,7 @@ Item {
     }
     for (var i = next.length - 1; i >= 0; i--) {
       var region = next[i]
-      if (region.destroyed || x < region.x || x > region.x + region.width || y < region.y || y > region.y + region.height) continue
+      if (region.destroyed || !Cut.contains(region.poly, x, y)) continue
       region.hits += amount
       if (region.hits >= region.limit) destroyRegion(region)
       destructibles = next
@@ -727,6 +813,8 @@ Item {
   function indexCarveMark(mark) {
     if (!regionCarveMarks[mark.regionId]) regionCarveMarks[mark.regionId] = []
     regionCarveMarks[mark.regionId].push(mark)
+    // Only bullet and blast circles are holes that shots can tunnel through.
+    if (mark.type) return
     var cellSize = 32
     var firstX = Math.floor((mark.x - mark.radius) / cellSize)
     var lastX = Math.floor((mark.x + mark.radius) / cellSize)
@@ -768,36 +856,15 @@ Item {
     for (var i = 0; i < destructibles.length; i++) {
       var region = destructibles[i]
       if (region.destroyed) continue
-      var minX = region.x
-      var maxX = region.x + region.width
-      var minY = region.y
-      var maxY = region.y + region.height
-      var inside = originX >= minX && originX <= maxX && originY >= minY && originY <= maxY
+      // Windows the saber has cut are convex polygons, not rectangles.
+      var inside = Cut.contains(region.poly, originX, originY)
       // The weapon is visually floating above the captured desktop. Do not
       // let the window underneath it catch the bullet on the way out.
       if (inside && !includeContainingRegion) continue
-      var nearX = -Infinity
-      var farX = Infinity
-      var nearY = -Infinity
-      var farY = Infinity
-      if (Math.abs(directionX) < 0.0001) {
-        if (originX < minX || originX > maxX) continue
-      } else {
-        var tx1 = (minX - originX) / directionX
-        var tx2 = (maxX - originX) / directionX
-        nearX = Math.min(tx1, tx2)
-        farX = Math.max(tx1, tx2)
-      }
-      if (Math.abs(directionY) < 0.0001) {
-        if (originY < minY || originY > maxY) continue
-      } else {
-        var ty1 = (minY - originY) / directionY
-        var ty2 = (maxY - originY) / directionY
-        nearY = Math.min(ty1, ty2)
-        farY = Math.max(ty1, ty2)
-      }
-      var entry = Math.max(nearX, nearY)
-      var exit = Math.min(farX, farY)
+      var span = Cut.clipLine(region.poly, originX, originY, directionX, directionY, -Infinity, Infinity)
+      if (!span) continue
+      var entry = span.enter
+      var exit = span.exit
       if (entry > exit || exit <= 4) continue
       var distance = Math.max(entry, 4.01)
       if (nearest && distance >= nearest.distance) continue
@@ -824,19 +891,29 @@ Item {
     }
     return nearest
   }
-  function destroyRegion(region) {
+  // quiet: a saber cut already played its own sound.
+  function destroyRegion(region, quiet) {
     region.destroyed = true
-    playWindowBreak()
+    if (!quiet) playWindowBreak()
     destroyedRegions.append({
       patchX: region.x, patchY: region.y,
       patchWidth: region.width, patchHeight: region.height
     })
+    dropPiece(region, region.poly, 0, (Math.random() < 0.5 ? -1 : 1) * 12, [], true)
+  }
+  // A falling copy of part of a window: its polygon, the marks it already
+  // carries, a sideways drift and spin, and an optional glowing cut edge.
+  function dropPiece(region, poly, drift, spin, edge, whole) {
+    var box = Cut.bounds(poly)
     fallingPieces.append({
       pieceToken: ++fallingSerial,
       pieceRegionId: region.id,
-      pieceX: region.x, pieceY: region.y,
-      pieceWidth: region.width, pieceHeight: region.height,
-      direction: Math.random() < 0.5 ? -1 : 1,
+      pieceX: box.x, pieceY: box.y,
+      pieceWidth: Math.max(1, box.width), pieceHeight: Math.max(1, box.height),
+      piecePoints: JSON.stringify(Cut.translate(poly, -box.x, -box.y)),
+      pieceEdge: JSON.stringify(edge),
+      pieceMarkLimit: (regionCarveMarks[region.id] || []).length,
+      pieceDrift: drift, pieceSpin: spin, pieceWhole: whole,
       fallDuration: 850 + Math.random() * 450
     })
   }
@@ -844,8 +921,10 @@ Item {
     for (var i = 0; i < fallingPieces.count; i++) {
       if (fallingPieces.get(i).pieceToken === token) {
         var regionId = fallingPieces.get(i).pieceRegionId
+        var whole = fallingPieces.get(i).pieceWhole
         fallingPieces.remove(i)
-        pruneRegionMarks(regionId)
+        // A cut-off piece leaves its window standing, so its marks stay.
+        if (whole) pruneRegionMarks(regionId)
         return
       }
     }
@@ -1116,7 +1195,11 @@ Item {
         required property real pieceY
         required property real pieceWidth
         required property real pieceHeight
-        required property real direction
+        required property string piecePoints
+        required property string pieceEdge
+        required property int pieceMarkLimit
+        required property real pieceDrift
+        required property real pieceSpin
         required property real fallDuration
         x: pieceX
         y: pieceY
@@ -1137,26 +1220,34 @@ Item {
             var c = getContext("2d")
             var source = String(root.desktopSnapshot)
             if (!source || !isImageLoaded(source)) return
-            c.globalCompositeOperation = "source-over"
+            c.reset()
             c.clearRect(0, 0, width, height)
+            // Only this piece's shape: a whole window, or the part a saber cut off.
+            c.save()
+            Cut.path(c, JSON.parse(fallingPiece.piecePoints), 0, 0)
+            c.clip()
             c.drawImage(source,
                         fallingPiece.pieceX, fallingPiece.pieceY,
                         fallingPiece.pieceWidth, fallingPiece.pieceHeight,
                         0, 0, width, height)
 
-            // Reapply this object's accumulated destruction to its private
-            // texture so the holes travel and rotate with the falling piece.
-            c.globalCompositeOperation = "destination-out"
+            // Reapply the destruction the window carried when this piece left
+            // it, so holes, grooves, and earlier cuts travel with the piece.
             var pieceMarks = root.regionCarveMarks[fallingPiece.pieceRegionId] || []
-            for (var i = 0; i < pieceMarks.length; i++) {
-              var mark = pieceMarks[i]
-              c.beginPath()
-              c.arc(mark.x - fallingPiece.pieceX,
-                    mark.y - fallingPiece.pieceY,
-                    mark.radius, 0, Math.PI * 2)
-              c.fill()
+            for (var i = 0; i < Math.min(fallingPiece.pieceMarkLimit, pieceMarks.length); i++)
+              Marks.draw(c, pieceMarks[i], -fallingPiece.pieceX, -fallingPiece.pieceY)
+            c.restore()
+            // A freshly cut edge still glows.
+            var edge = JSON.parse(fallingPiece.pieceEdge)
+            if (edge.length === 4) {
+              c.lineCap = "round"
+              c.strokeStyle = Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.85)
+              c.lineWidth = 5
+              c.beginPath(); c.moveTo(edge[0], edge[1]); c.lineTo(edge[2], edge[3]); c.stroke()
+              c.strokeStyle = "#fff6e0"
+              c.lineWidth = 1.6
+              c.beginPath(); c.moveTo(edge[0], edge[1]); c.lineTo(edge[2], edge[3]); c.stroke()
             }
-            c.globalCompositeOperation = "source-over"
           }
         }
         transform: Rotation {
@@ -1177,8 +1268,15 @@ Item {
           target: fallRotation
           property: "angle"
           from: 0
-          to: fallingPiece.direction * 12
+          to: fallingPiece.pieceSpin
           duration: fallingPiece.fallDuration
+          running: true
+        }
+        NumberAnimation on x {
+          from: fallingPiece.pieceX
+          to: fallingPiece.pieceX + fallingPiece.pieceDrift
+          duration: fallingPiece.fallDuration
+          easing.type: Easing.OutQuad
           running: true
         }
       }
@@ -1262,6 +1360,36 @@ Item {
       }
     }
 
+    // Saber grooves glow white-hot in the theme colour, then cool to orange and
+    // fade, leaving the charred scorch painted into the desktop underneath.
+    Repeater {
+      model: 96
+      delegate: Item {
+        id: heatSegment
+        required property int index
+        readonly property var heat: root.saberHeat[index] || null
+        readonly property real cooling: heat ? Math.min(1, heat.age / root.saberHeatLife) : 1
+        readonly property real length: heat ? Math.hypot(heat.x1 - heat.x0, heat.y1 - heat.y0) : 0
+        visible: !!heat && root.destructionEnabled
+        z: 9
+        x: heat ? heat.x0 : 0
+        y: heat ? heat.y0 : 0
+        transform: Rotation { angle: heatSegment.heat ? Math.atan2(heatSegment.heat.y1 - heatSegment.heat.y0, heatSegment.heat.x1 - heatSegment.heat.x0) * 180 / Math.PI : 0 }
+        Rectangle {
+          x: -height / 2; y: -height / 2
+          width: heatSegment.length + height; height: 11; radius: height / 2
+          color: root.accent
+          opacity: 0.5 * Math.pow(1 - heatSegment.cooling, 1.5)
+        }
+        Rectangle {
+          x: -height / 2; y: -height / 2
+          width: heatSegment.length + height; height: 3; radius: height / 2
+          color: heatSegment.cooling < 0.2 ? Qt.tint(root.accent, Qt.rgba(1, 1, 1, 1 - heatSegment.cooling / 0.2))
+            : Qt.tint(root.accent, Qt.rgba(1, 0.42, 0.1, Math.min(1, (heatSegment.cooling - 0.2) / 0.4)))
+          opacity: 1 - heatSegment.cooling
+        }
+      }
+    }
     Repeater {
       model: 8
       delegate: Rectangle {
@@ -1956,7 +2084,7 @@ Item {
       var dy = root.pointerY - root.gunY
       var distance = Math.sqrt(dx * dx + dy * dy)
       var settled = !root.gunPositioned || distance <= 0.001 || Math.abs(distance - root.followDistance) < 0.01
-      if (settled && !root.saberHeld && root.saberIgnition === 0 && root.saberTrail.length === 0 && !trickAnimation.running && root.particles.length === 0 && root.pendingEffects.length === 0 && root.recoil === 0 && root.flash === 0) {
+      if (settled && !root.saberHeld && root.saberIgnition === 0 && root.saberTrail.length === 0 && root.saberHeat.length === 0 && !trickAnimation.running && root.particles.length === 0 && root.pendingEffects.length === 0 && root.recoil === 0 && root.flash === 0) {
         root.simulationAwake = false
         root.simulationBlend = 1
       }

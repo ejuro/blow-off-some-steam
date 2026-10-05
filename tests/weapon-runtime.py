@@ -13,7 +13,7 @@ with tempfile.TemporaryDirectory(prefix='steam-weapon-test-') as folder:
     for module in ('Commons', 'Ui', 'services'):
         (base / module).symlink_to(shell / module, target_is_directory=True)
     env = dict(os.environ, XDG_STATE_HOME=str(base / 'state'), QT_QPA_PLATFORM='wayland')
-    for name, marker in [('drawer-open.qml', 'DRAWER_OPEN_OK'), ('arena-saber.qml', 'ARENA_SABER_OK')]:
+    for name, marker in [('drawer-open.qml', 'DRAWER_OPEN_OK'), ('arena-saber.qml', 'ARENA_SABER_OK'), ('arena-cut.qml', 'ARENA_CUT_OK')]:
         source = (ROOT / 'tests' / name).read_text().replace('import ".." as Steam', f'import "{ROOT.as_uri()}" as Steam')
         config = base / 'shell.qml'
         config.write_text(source)

@@ -15,6 +15,8 @@ played at the same volume and keep their relative loudness:
   saber-retract.wav     rising hiss with a falling hum, cut off at the end
   saber-clash.wav       crackling clash fizz with a hum surge
   saber-clash-2.wav     shorter, brighter clash variant
+  saber-sizzle.wav      crackling burn loop while the blade cuts into a window
+  saber-cut.wav         bright hiss as the blade severs a piece of a window
 
 The three loops are two seconds long and seamless; the game keeps them running
 while the blade is lit and sets their volumes every frame from blade speed,
@@ -257,6 +259,44 @@ def clash(seed, length, hold, centre):
     return out
 
 
+def sizzle_loop():
+    """The blade burning into a captured window: gated fizz over a strained hum."""
+    rng = random.Random(51)
+    grain = Crackle(52, .0012)
+    band = Bandpass(.9)
+    high = Highpass(1800)
+    top = Rolloff(9000)
+    hum = Hum(53)
+
+    def sample(t):
+        # Six whole wobble cycles per two-second loop keep the seam exact.
+        centre = 3600 + 900 * math.sin(6 * math.pi * t)
+        fizz = top(high(band(rng.uniform(-1, 1), centre)) * grain(.8), centre * 1.8) * 4
+        buzz = math.tanh(2 * hum(fizz=4)) * IDLE * .8
+        return fizz + buzz
+    return loop(sample)
+
+
+def cut():
+    """A quick falling hiss with a hum surge: a piece of window sliced off."""
+    rng = random.Random(61)
+    grain = Crackle(62, .001)
+    band = Bandpass(.7)
+    high = Highpass(1500)
+    top = Rolloff(9500)
+    hum = Hum(63)
+    length = .55
+    out = []
+    for i in range(int(RATE * length)):
+        t = i / RATE
+        envelope = smooth(0, .015, t) * math.exp(-t / .16)
+        centre = 5200 - 2600 * smooth(0, .4, t)
+        hiss = top(high(band(rng.uniform(-1, 1), centre)) * grain(.6), centre * 1.7) * 6 * envelope
+        surge = math.tanh(2 * hum(1.05 - .12 * smooth(0, .4, t), fizz=3)) * IDLE * 2.2 * math.exp(-t / .2)
+        out.append((hiss + surge) * (1 - smooth(length - .05, length, t)))
+    return out
+
+
 def write(effects):
     scale = .89 * 32767 / max(abs(s) for samples in effects.values() for s in samples)
     for name, samples in effects.items():
@@ -274,4 +314,6 @@ write({
     'saber-retract.wav': retract(),
     'saber-clash.wav': clash(41, .9, .35, 3400),
     'saber-clash-2.wav': clash(91, .65, .18, 4200),
+    'saber-sizzle.wav': sizzle_loop(),
+    'saber-cut.wav': cut(),
 })
