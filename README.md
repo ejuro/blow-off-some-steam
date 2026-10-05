@@ -12,7 +12,7 @@ A playful Omarchy Shell bar widget. Open the animated weapon wardrobe and choose
 
 ## Audio isolation
 
-The audio launcher uses the system executables `/usr/bin/python3` and `/usr/bin/qs`, with no PATH-based fallback. Python starts in isolated mode with site initialization disabled. Both processes receive a minimal environment; only `XDG_RUNTIME_DIR`, `PIPEWIRE_RUNTIME_DIR`, and `PULSE_SERVER` are inherited to locate the audio service. The worker uses temporary private home/configuration/cache directories. Custom Python, Qt/QML, library, and PipeWire configuration overrides are not forwarded.
+The audio launcher uses the system executables `/usr/bin/python3` and `/usr/bin/qs`, with no PATH-based fallback. Python starts in isolated mode with site initialization disabled. Both processes receive a minimal environment; only `XDG_RUNTIME_DIR`, `PIPEWIRE_RUNTIME_DIR`, and `PULSE_SERVER` are inherited to locate the audio service. The worker uses temporary private home/configuration/cache directories. Custom Python, Qt/QML, library, and PipeWire configuration overrides are not forwarded. Hardware video codec probing is switched off in the worker, since sound effects never need it and it would delay the first sound by about a second.
 
 Sound effects run in a separate, supervised Qt process. Hovering the bar icon prepares the audio before a click; it stays available while the weapon case or game is open. Leaving the icon with both closed shuts the worker down. The drawer opens immediately and never waits on audio. Audio is never initialized inside the shell process.
 

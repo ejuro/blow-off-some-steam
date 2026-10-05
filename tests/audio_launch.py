@@ -123,6 +123,9 @@ Scope {
                     assert not forbidden.intersection(values), forbidden.intersection(values)
                     assert values[b'PATH'] == b'/usr/bin'
                 worker_runtime = Path(os.fsdecode(environment(child)[b'XDG_RUNTIME_DIR']))
+                # Hardware codec probing would delay the first sound by about a second.
+                assert environment(child).get(b'QT_FFMPEG_ENCODING_HW_DEVICE_TYPES') == b',', 'hardware probing enabled'
+                assert environment(child).get(b'QT_FFMPEG_DECODING_HW_DEVICE_TYPES') == b',', 'hardware probing enabled'
                 assert not marker.exists(), 'shadow executable or Python startup hook ran'
                 assert 'libQt6Multimedia' not in Path(f'/proc/{parent.pid}/maps').read_text()
                 if mode == 'close':

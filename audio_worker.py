@@ -77,7 +77,10 @@ def main():
                        PIPEWIRE_RUNTIME_DIR=os.environ.get('PIPEWIRE_RUNTIME_DIR') or runtime,
                        PULSE_SERVER=os.environ.get('PULSE_SERVER') or 'unix:' + runtime + '/pulse/native',
                        QT_QPA_PLATFORM='offscreen', QT_QPA_PLATFORMTHEME='basic',
-                       QSG_RHI_BACKEND='software', QT_LOGGING_RULES='*=false')
+                       QSG_RHI_BACKEND='software', QT_LOGGING_RULES='*=false',
+                       # Short WAV effects need no hardware codecs. Without these, the
+                       # first SoundEffect spends ~1.1 s probing video hardware.
+                       QT_FFMPEG_DECODING_HW_DEVICE_TYPES=',', QT_FFMPEG_ENCODING_HW_DEVICE_TYPES=',')
             try:
                 supervisor_pid = os.getpid()
                 child = subprocess.Popen(
