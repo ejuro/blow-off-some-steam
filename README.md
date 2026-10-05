@@ -14,7 +14,9 @@ A playful Omarchy Shell bar widget. Open the animated weapon wardrobe and choose
 
 The audio launcher uses the system executables `/usr/bin/python3` and `/usr/bin/qs`, with no PATH-based fallback. Python starts in isolated mode with site initialization disabled. Both processes receive a minimal environment; only `XDG_RUNTIME_DIR`, `PIPEWIRE_RUNTIME_DIR`, and `PULSE_SERVER` are inherited to locate the audio service. The worker uses temporary private home/configuration/cache directories. Custom Python, Qt/QML, library, and PipeWire configuration overrides are not forwarded.
 
-Sound effects and music run in a separate, supervised Qt process while the weapon case or game is open. Closing both shuts it down. Audio is not initialized in the shell by this plugin while idle.
+Sound effects run in a separate, supervised Qt process. Hovering the bar icon prepares the audio before a click; it stays available while the weapon case or game is open. Leaving the icon with both closed shuts the worker down. The drawer opens immediately and never waits on audio. Audio is never initialized inside the shell process.
+
+Qt 6.11 silences every effect in the process while any playing effect sits at volume 0 (or muted), so the worker never lowers a playing effect below -80 dB.
 
 If the audio process crashes, stops responding, or loses contact with the shell, it is terminated and the game continues without sound. Close the case and holster, then reopen to start a fresh audio session. A long suspend also invalidates the old session. The worker uses only packaged audio and a private local socket, with bounded message buffers and suppressed worker logging.
 
@@ -27,24 +29,27 @@ Desktop destruction is opt-in. Its helpers use absolute system executable paths 
 ## Controls
 
 - Click the bar icon to open the weapon case.
-- Choose the **Glock P80**, **Colt 45**, **AK-47**, **MP5A3**, **M20 Bazooka**, or **Thick M20**.
-- Check **Desktop destruction** to freeze the current monitor into a safe, destructible playground after choosing a weapon. It is off by default, and your real windows and files remain untouched.
+- Choose the **Glock P80**, **Colt 45**, **AK-47**, **MP5A3**, **M20 Bazooka**, or **Lightsaber**.
+- Pick a mode above the weapons: **Free play** (the default), **Targets**, **Fly Hunt**, or **Destruction**. One mode is active at a time.
+- **Destruction** freezes the current monitor into a safe, destructible playground after choosing a weapon. Your real windows and files remain untouched.
 - Click to fire. Hold with the AK-47 or MP5A3 for automatic fire.
 - Right-click while armed to spin the weapon once around its grip.
-- Hold the middle mouse button, drag toward a weapon in the hexagonal wheel, and release to switch. Keyboard users can hold **Q**, select with arrow keys, and release; number keys **1–6** or **Enter** also choose while the wheel is open.
+- Hold the middle mouse button, drag toward a weapon in the weapon wheel, and release to switch. Keyboard users can hold **Q**, select with arrow keys, and release; number keys **1–6** or **Enter** also choose while the wheel is open.
 - Glock, Colt, AK-47, and MP5 rounds remain visible and ricochet off screen edges with damped momentum.
+- **Lightsaber** uses a shaded pixel-style steel hilt and a theme-colored energy blade. It starts unlit: hold left-click to ignite it with a snap-hiss and steady hum, and release to retract it. While lit, the blade cuts whatever it sweeps through as you move the mouse, and its hum swells and brightens continuously with blade speed. Right-click spins the saber; a lit spin cuts too. The blade can cleave several flies at once, leaving a splat and two frozen sprite halves that separate, tumble, and fall, and crackles when it strikes a fly, practice target, or captured desktop window. Switching weapons, opening the wheel, and holstering put the blade out at once; losing focus retracts it.
+- The weapon case scrolls when it is taller than the display.
 - Ejected casings tumble and bounce independently when they reach a screen edge.
-- **Target practice** is off by default. Check it in the drawer to spawn a roaming bullseye; hit it to dissolve it into smoke and relocate it.
-- **Fly Hunt** spawns four animated flies. Shoot them to leave a theme-colored splat; each fly returns after a short delay. Rocket blasts can hit several flies at once.
-- Local video experiment: 20 fly kills summon **The Motherfly**, a giant boss with 120 health. Combat pauses for an ominous buzz and dramatic reveal. She enrages at 35% health with a brief pause, then darts across the screen with short shake pulses. She falters at 10%, and spirals into a giant splat on defeat. Boss splats sound every 30 health lost and on landing. Bullets deal one damage and blasts deal eight; direct rockets also register their projectile hit. Holstering or leaving Fly Hunt resets the encounter and stops its sounds.
-- **Target practice**, **Fly Hunt**, and **Desktop destruction** are mutually exclusive; enabling one automatically disables the others.
+- **Targets** spawns a roaming bullseye; hit it to dissolve it into smoke and relocate it.
+- **Fly Hunt** is a 40-second round with four animated flies at different speeds. A new hunt opens on a briefing card with the goal, how combos work, and your best with that weapon; left-click (or Space/Enter) starts a 3 · 2 · 1 · GO countdown with a beep on each step. **Play again** skips the briefing. After GO, and flies fly in from the screen edges, respawning 0.25–0.55 seconds after a kill. Each kill earns 100 points times your combo: each kill soon after the last increases the multiplier from ×1 to a maximum of ×5. The window tightens as the combo grows: 1.8 seconds at ×1, then 1.5, 1.25, 1.05, and 0.9 seconds at ×5. Multi-kills build the combo too. Misses do not penalize your score. Each round is played with the one weapon you pick: in Fly Hunt mode every weapon card shows your best score with it, the weapon wheel is disabled during the round, and picking another weapon from the case starts a fresh round with it.
+- Kills hit hard: flies and shots freeze for a split second (longer for multi-kills), the play area shakes harder as the combo climbs, and splats and their sprayed drops grow with the combo. The weapon and HUD stay steady.
+- In the last ten seconds a **10 SECONDS!** callout appears, the timer pops on every second with a clock tick, and a red glow at the screen edges pulses stronger toward zero. The final three seconds tick twice as fast on a higher tick.
+- The Fly Hunt HUD shows time, your best with the current weapon, score, kills, and the current multiplier. Each kill pops up its points where the fly died, and a bar under the HUD drains over the current combo window; when it runs out, the lost combo shakes and greys out. Killing several flies with one rocket blast or one saber sweep calls out DOUBLE, TRIPLE, or QUAD. At zero, shooting and scoring stop and the result screen counts up your score, then shows how it compares with your best for that weapon; a new best gets confetti and a fanfare. It offers **Play again**. Escape abandons an unfinished round without saving it.
+- The weapon case has **Play** and **High scores** tabs. High scores lists your best completed round with each weapon (score, kills, best multiplier, and date) and highlights the overall best. Rounds from the earlier 60-second length, and older rounds that mixed several weapons, are kept in the file but do not count for any weapon. Rounds are stored locally in `$XDG_STATE_HOME/blow-off-some-steam/fly-records.json` (default `~/.local/state/blow-off-some-steam/fly-records.json`), which keeps the top 20 per weapon. There is no accuracy tracking.
 - Rockets ricochet from screen edges and burst when the launcher recording reaches its explosion; direct hits detonate immediately, and the full blast radius can hit targets.
 - Bullet impacts leave persistent holes and cracks; rocket explosions scorch much larger areas of the captured desktop.
 - Press **Escape**, or right-click the bar icon after returning to it, to holster.
 
 While armed, the fullscreen overlay intentionally captures pointer input so shots do not click the windows underneath it.
-
-**Giant Wings**, the Motherfly soundtrack, fades in at her reveal, loops during the fight, and fades out during her death tumble. Holstering or leaving Fly Hunt stops the music immediately.
 
 Desktop destruction stores its frozen frame as an owner-only temporary file under `$XDG_RUNTIME_DIR` (the private session directory). The file is removed when the weapon is holstered; an abnormal shell termination may leave it until session cleanup.
 
@@ -68,7 +73,7 @@ omarchy plugin validate .
 
 ## Third-party artwork
 
-Weapon sprites are from [GUNS V1.01 by Arcade Island](https://arcadeisland.itch.io/guns-asset-pack-v1), used and modified under the terms published on that page. The sprites under `assets/` are not covered by this plugin's MIT license. Arcade Island permits use and modification in personal and commercial projects, but does not permit reselling the assets individually or redistributing them as your own creation.
+The six conventional weapon sprites are from [GUNS V1.01 by Arcade Island](https://arcadeisland.itch.io/guns-asset-pack-v1), used and modified under the terms published on that page. The sprites under `assets/` are not covered by this plugin's MIT license. Arcade Island permits use and modification in personal and commercial projects, but does not permit reselling the assets individually or redistributing them as your own creation.
 
 ## Third-party sounds
 
@@ -82,6 +87,9 @@ The processed sounds under `sounds/` are derived from the following Pixabay down
 - “Load Gun sound effect 5” by beetpro
 - “Window Breaking” by m1a2t3z4 (via freesound_community)
 - “Slime Impact” by Universfield
-- “Fly buzzing from left to right” by Kuzu420
 
 These audio files are not covered by this plugin's MIT license. See `sounds/README.md` for source links and details.
+
+Fly Hunt checks: `node tests/fly-round.cjs` for scoring rules, and `python tests/fly-hunt.py` for the QML timer, replay, cutoff, and records persistence. The QML check runs offscreen with temporary state and no desktop/audio interaction.
+
+Lightsaber collision and records checks: `node tests/saber.cjs`. Silent hidden-window drawer and saber integration checks (requires the desktop session): `python tests/weapon-runtime.py`.

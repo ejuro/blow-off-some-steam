@@ -1,5 +1,5 @@
 // Preserve the original Canvas geometry and source-over drawing order.
-function particle(c, p, i) {
+function particle(c, p, i, accent) {
   if (p.kind === 1) {
     c.fillStyle = i % 3 === 0 ? "#ff4d2e" : (i % 2 === 0 ? "#ffd24a" : "#ff8a2a")
     c.beginPath(); c.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2); c.fill()

@@ -3,6 +3,7 @@ import Quickshell.Io
 import Quickshell.Wayland
 import QtQuick
 import qs.Commons
+import "SaberGeometry.js" as Saber
 
 Item {
   id: root
@@ -40,11 +41,11 @@ Item {
   property string weapon: "glock"
   readonly property var spec: {
     switch (weapon) {
+    case "lightsaber": return { name: "Lightsaber", image: "", width: 96, height: 24, scale: 2.6, gripX: 12, gripY: 12, muzzleX: 92, muzzleY: 12, automatic: false, interval: 460, recoil: 0, particles: 0, power: 1, ejectsCase: false }
     case "revolver": return { name: "Colt 45", image: "assets/revolver-colt45.png", width: 64, height: 32, scale: 2.2, gripX: 20, gripY: 25, muzzleX: 47, muzzleY: 12.5, automatic: false, interval: 280, recoil: 19, particles: 25, power: 1.25, ejectsCase: false, flashStyle: "revolver" }
     case "ak47": return { name: "AK-47", image: "assets/ak47.png", width: 96, height: 48, scale: 2, gripX: 35, gripY: 33, muzzleX: 79, muzzleY: 9.5, ejectX: 45, ejectY: 12, automatic: true, interval: 82, recoil: 10, particles: 7, power: 1 }
     case "mp5a3": return { name: "MP5A3", image: "assets/mp5a3.png", width: 80, height: 48, scale: 2.1, gripX: 33, gripY: 33, muzzleX: 60, muzzleY: 7.5, ejectX: 31, ejectY: 8, automatic: true, interval: 66, recoil: 7, particles: 6, power: 0.9 }
     case "bazooka": return { name: "M20 Bazooka", image: "assets/bazooka-m20.png", width: 128, height: 32, scale: 2, gripX: 46, gripY: 24, muzzleX: 115, muzzleY: 12.5, automatic: false, interval: 500, recoil: 28, particles: 42, power: 1.8 }
-    case "thick-bazooka": return { name: "Thick M20", image: "assets/bazooka-m20-thick.png", width: 192, height: 32, scale: 1.65, gripX: 66, gripY: 24, muzzleX: 147, muzzleY: 10.5, automatic: false, interval: 550, recoil: 32, particles: 52, power: 2.1 }
     default: return { name: "Glock P80", image: "assets/glock-p80.png", width: 64, height: 48, scale: 2.2, gripX: 22, gripY: 34, muzzleX: 48, muzzleY: 11.5, ejectX: 31, ejectY: 14, automatic: false, interval: 220, recoil: 15, particles: 19, power: 1 }
     }
   }
@@ -66,25 +67,32 @@ Item {
   property bool targetVisible: false
   property bool targetsEnabled: false
   property bool bugHuntEnabled: false
-  readonly property bool bossCinematic: bugHuntEnabled && !!bugLayerLoader.item &&
-    (bugLayerLoader.item.bossEntering || bugLayerLoader.item.bossDying ||
-     (bugLayerLoader.item.bossActive && bugLayerLoader.item.enrageTime > 0) ||
-     (bugLayerLoader.item.bossTriggered && !bugLayerLoader.item.bossActive && !bugLayerLoader.item.bossDefeated))
-  onBossCinematicChanged: {
-    if (bossCinematic) {
-      automaticHoldTimer.stop(); fireTimer.stop(); automaticHoldEngaged = false
-      pistolSound.stop(); akSingleSound.stop(); mp5SingleSound.stop()
-      automaticSound.stop(); mp5AutomaticSound.stop(); revolverSound.stop()
-      bazookaLaunchSound.stop(); rocketExplosionSound.stop(); weaponSpinSound.stop()
-      trickAnimation.stop(); closeWeaponWheel(false)
-      // The 20th kill can occur inside a physics step. Clear the old volleys
-      // after that step finishes so they cannot instantly hit the revealed boss.
-      Qt.callLater(function() {
-        if (root.bossCinematic && bugLayerLoader.item && bugLayerLoader.item.bossEntering) {
-          root.particles = []; root.pendingEffects = []; root.particleBuffer = []
-          canvas.clear(); root.recoil = 0; root.flash = 0
-        }
-      })
+  readonly property var flyRecords: records
+  FlyRecords { id: records }
+  readonly property bool roundFinished: bugHuntEnabled && !!bugLayerLoader.item && bugLayerLoader.item.finished
+  readonly property bool huntBriefing: bugHuntEnabled && !!bugLayerLoader.item && bugLayerLoader.item.briefing
+  function weaponNames(ids) {
+    return ids.map(function(id) {
+      for (var i = 0; i < weaponOptions.length; i++) if (weaponOptions[i].id === id) return weaponOptions[i].name
+      return id
+    }).join(" · ") || "No weapons fired"
+  }
+  function clearRoundEffects() {
+    cancelSaber()
+    automaticHoldTimer.stop(); fireTimer.stop(); automaticHoldEngaged = false
+    automaticSound.stop(); mp5AutomaticSound.stop()
+    pistolSound.stop(); akSingleSound.stop(); mp5SingleSound.stop()
+    revolverSound.stop(); bazookaLaunchSound.stop(); rocketExplosionSound.stop()
+    weaponSpinSound.stop(); trickAnimation.stop(); closeWeaponWheel(false)
+    keyboardWeaponWheel = false
+    rocketCooldown.stop()
+    particles = []; pendingEffects = []; particleBuffer = []
+    recoil = 0; flash = 0; canvas.clear()
+  }
+  onRoundFinishedChanged: {
+    if (roundFinished) {
+      // A hit can expire the round inside a physics step; clear after it returns.
+      Qt.callLater(function() { if (root.roundFinished) root.clearRoundEffects() })
     } else if (armed) wakeSimulation()
   }
   property real targetX: 0
@@ -98,17 +106,29 @@ Item {
   property int weaponWheelSelection: -1
   property bool keyboardWeaponWheel: false
   readonly property color accent: Color.accent
+  // Overlay UI follows the active Omarchy theme like the weapon case does.
+  readonly property color foreground: Color.foreground
+  readonly property color background: Color.background
+  readonly property color muted: Color.muted
+  readonly property color urgent: Color.urgent
+  readonly property string fontFamily: Style.font.family
+  readonly property int cornerRadius: Style.cornerRadius
+  readonly property string themeSignature: [accent, foreground, background, muted].join(" ")
+  function tint(color, alpha) { return Qt.rgba(color.r, color.g, color.b, alpha) }
   readonly property var weaponOptions: [
     { id: "glock", name: "GLOCK", image: "assets/glock-p80.png", clip: Qt.rect(18, 8, 30, 20) },
     { id: "revolver", name: "COLT", image: "assets/revolver-colt45.png", clip: Qt.rect(2, 11, 45, 18) },
     { id: "ak47", name: "AK-47", image: "assets/ak47.png", clip: Qt.rect(3, 5, 76, 22) },
     { id: "mp5a3", name: "MP5", image: "assets/mp5a3.png", clip: Qt.rect(3, 3, 57, 27) },
     { id: "bazooka", name: "M20", image: "assets/bazooka-m20.png", clip: Qt.rect(3, 7, 112, 24) },
-    { id: "thick-bazooka", name: "THICK", image: "assets/bazooka-m20-thick.png", clip: Qt.rect(35, 3, 112, 28) }
+    { id: "lightsaber", name: "SABER", image: "", clip: Qt.rect(0, 0, 96, 24) }
   ]
 
+  // Fly Hunt rounds are played with one weapon, so the wheel stays shut.
   function openWeaponWheel(x, y) {
-    var extent = 170
+    if (roundFinished || bugHuntEnabled) return
+    cancelSaber()
+    var extent = 185
     weaponWheelOriginX = x
     weaponWheelOriginY = y
     weaponWheelX = Math.max(extent, Math.min(window.width - extent, x))
@@ -125,7 +145,7 @@ Item {
       nextSelection = -1
     } else {
       var degrees = Math.atan2(dy, dx) * 180 / Math.PI
-      nextSelection = Math.round(((degrees + 90 + 360) % 360) / 60) % 6
+      nextSelection = Math.round(((degrees + 90 + 360) % 360) / (360 / weaponOptions.length)) % weaponOptions.length
     }
     if (nextSelection !== weaponWheelSelection) {
       weaponWheelSelection = nextSelection
@@ -147,6 +167,169 @@ Item {
     return 0
   }
 
+  // Hold left-click to ignite; the lit blade cuts whatever it sweeps through.
+  property bool saberHeld: false
+  property real saberIgnition: 0
+  property real saberSpeed: 0
+  property real saberClashCooldown: 0
+  property var saberPrevious: null
+  property var saberTrail: []
+  // Smooth swing: hum and two swing loops run together while lit, and blade
+  // speed sets their mix every frame, so the sound follows the motion.
+  property real saberSwing: 0
+  property real saberHumLevel: 0
+  property real saberMixClock: 0
+  // The saber files share one mastering gain, so they all play at this volume.
+  readonly property real saberVolume: 0.3
+  readonly property real saberBladeAngle: aimAngle + trickAngle
+  function igniteSaber() {
+    if (!armed || roundFinished || weaponWheelOpen || weapon !== "lightsaber" || saberHeld) return false
+    if (!gunPositioned) {
+      gunX = pointerX - followDistance; gunY = pointerY
+      aimAngle = 0; gunPositioned = true
+    }
+    saberHeld = true
+    stopSaberLoops()
+    saberRetractSound.stop(); saberIgniteSound.stop(); saberIgniteSound.play()
+    saberSwingLowSound.play(); saberSwingHighSound.play()
+    saberHumDelay.restart()
+    wakeSimulation()
+    return true
+  }
+  function retractSaber() {
+    if (!saberHeld) return
+    saberHeld = false
+    stopSaberLoops()
+    saberIgniteSound.stop(); saberRetractSound.stop(); saberRetractSound.play()
+    wakeSimulation()
+  }
+  function stopSaberLoops() {
+    saberHumDelay.stop(); saberHumFadeIn.stop()
+    saberHumSound.stop(); saberSwingLowSound.stop(); saberSwingHighSound.stop()
+    saberSwing = 0; saberHumLevel = 0; saberMixClock = 0
+    saberHumSound.volume = 0; saberSwingLowSound.volume = 0; saberSwingHighSound.volume = 0
+  }
+  // Immediate and silent: weapon swaps, the wheel, focus loss, and holstering.
+  function cancelSaber() {
+    saberHeld = false; saberIgnition = 0; saberSpeed = 0
+    saberClashCooldown = 0
+    saberPrevious = null; saberTrail = []
+    stopSaberLoops()
+    saberIgniteSound.stop()
+  }
+  function mixSaber(dt) {
+    var target = saberHeld ? Math.max(0, Math.min(1, (saberSpeed - 250) / 2600)) : 0
+    // Swells rise quickly with the motion and settle a little more slowly.
+    saberSwing += (target - saberSwing) * (1 - Math.exp(-dt / (target > saberSwing ? 0.035 : 0.14)))
+    saberMixClock += dt
+    if (saberMixClock < 0.022) return
+    saberMixClock = 0
+    setSaberVoice(saberHumSound, saberVolume * saberHumLevel * (1 - 0.3 * saberSwing))
+    setSaberVoice(saberSwingLowSound, saberVolume * Math.min(1, saberSwing * 1.5))
+    setSaberVoice(saberSwingHighSound, saberVolume * Math.pow(saberSwing, 2.2))
+  }
+  // Volume changes cross the audio bridge, so skip ones too small to hear.
+  function setSaberVoice(sound, volume) {
+    if (Math.abs(sound.volume - volume) > 0.01 || (volume === 0 && sound.volume !== 0)) sound.volume = volume
+  }
+  function advanceSaber(dt) {
+    if (weapon !== "lightsaber" || dt <= 0) return
+    saberClashCooldown = Math.max(0, saberClashCooldown - dt)
+    if (saberHeld) saberIgnition = Math.min(1, saberIgnition + dt / 0.13)
+    else saberIgnition = Math.max(0, saberIgnition - dt / 0.35)
+    var trail = saberTrail.filter(function(sample) { sample.age += dt; return sample.age < 0.13 })
+    if (saberIgnition === 0) {
+      saberPrevious = null; saberSpeed = 0
+      saberTrail = trail
+      return
+    }
+    var blade = Saber.blade(gunX, gunY, saberBladeAngle, spec.scale, saberIgnition)
+    var previous = saberPrevious || blade
+    var tipTravel = Math.hypot(blade.tip.x - previous.tip.x, blade.tip.y - previous.tip.y)
+    saberSpeed += (tipTravel / dt - saberSpeed) * Math.min(1, dt * 30)
+    if (saberHeld) mixSaber(dt)
+    var struck = false
+    if (bugHuntEnabled && bugLayerLoader.item && bugLayerLoader.item.hitSaber(previous, blade)) struck = true
+    if (targetsEnabled && targetVisible && Saber.hits(targetX, targetY, targetRadius + 6, previous, blade)) { hitTarget(); struck = true }
+    if (destructionEnabled) {
+      if (damageDesktopRay(blade.base.x, blade.base.y, blade.tip.x, blade.tip.y, 6)) struck = true
+      if (damageDesktopRay(previous.tip.x, previous.tip.y, blade.tip.x, blade.tip.y, 6)) struck = true
+    }
+    // A short cooldown keeps one sweep through several flies to a single clash.
+    if (struck && saberClashCooldown === 0) {
+      var clash = Math.random() < 0.5 ? saberClashSound : saberClashSound2
+      clash.stop(); clash.play()
+      saberClashCooldown = 0.12
+    }
+    if (tipTravel > 4) trail.push({base: blade.base, tip: blade.tip, age: 0})
+    saberPrevious = blade
+    saberTrail = trail.slice(-8)
+  }
+  Timer {
+    id: saberHumDelay
+    // The ignition's own hum fades out as the loop fades in.
+    interval: 500
+    onTriggered: { saberHumSound.play(); saberHumFadeIn.restart() }
+  }
+  NumberAnimation {
+    id: saberHumFadeIn
+    target: root
+    property: "saberHumLevel"
+    from: 0
+    to: 1
+    duration: 500
+  }
+  RemoteSound {
+    id: saberHumSound
+    audio: root.audio
+    source: Qt.resolvedUrl("sounds/saber-hum.wav")
+    loops: RemoteSound.Infinite
+    volume: 0
+  }
+  RemoteSound {
+    id: saberSwingLowSound
+    audio: root.audio
+    source: Qt.resolvedUrl("sounds/saber-swing-low.wav")
+    loops: RemoteSound.Infinite
+    volume: 0
+  }
+  RemoteSound {
+    id: saberSwingHighSound
+    audio: root.audio
+    source: Qt.resolvedUrl("sounds/saber-swing-high.wav")
+    loops: RemoteSound.Infinite
+    volume: 0
+  }
+  RemoteSound {
+    id: saberRetractSound
+    audio: root.audio
+    source: Qt.resolvedUrl("sounds/saber-retract.wav")
+    volume: root.saberVolume
+  }
+  RemoteSound {
+    id: saberClashSound
+    audio: root.audio
+    source: Qt.resolvedUrl("sounds/saber-clash.wav")
+    volume: root.saberVolume
+  }
+  RemoteSound {
+    id: saberClashSound2
+    audio: root.audio
+    source: Qt.resolvedUrl("sounds/saber-clash-2.wav")
+    volume: root.saberVolume
+  }
+  RemoteSound {
+    id: saberIgniteSound
+    audio: root.audio
+    source: Qt.resolvedUrl("sounds/saber-ignite.wav")
+    volume: root.saberVolume
+  }
+  // The saber hilt arrives unlit; its ignition is the ready sound.
+  function playEquipSound(id) {
+    weaponReadySound.stop()
+    if (id !== "lightsaber") weaponReadySound.play()
+  }
+
   function spawnTarget() {
     if (!armed || !targetsEnabled) return
     var margin = targetRadius + 55
@@ -162,6 +345,14 @@ Item {
     var dx = p.x - targetX
     var dy = p.y - targetY
     return dx * dx + dy * dy <= Math.pow(targetRadius + radius, 2)
+  }
+  function segmentHitsTarget(x0, y0, x1, y1, radius) {
+    if (!targetVisible) return false
+    var dx = x1 - x0, dy = y1 - y0
+    var lengthSquared = dx * dx + dy * dy
+    var t = lengthSquared > 0 ? ((targetX - x0) * dx + (targetY - y0) * dy) / lengthSquared : 0
+    t = Math.max(0, Math.min(1, t))
+    return projectileHitsTarget({ x: x0 + t * dx, y: y0 + t * dy }, radius)
   }
   function targetWithinBlast(x, y, radius) {
     if (!targetVisible) return false
@@ -182,7 +373,7 @@ Item {
   }
   function playRocketExplosion(p) {
     if (bugHuntEnabled && bugLayerLoader.item)
-      bugLayerLoader.item.hitBlast(p.x, p.y, 180 * (p.boomScale || 1))
+      bugLayerLoader.item.hitBlast(p.x, p.y, 180 * (p.boomScale || 1), p.weapon)
     rocketExplosionSound.stop()
     rocketExplosionSound.volume = (p.boomScale || 1) > 1 ? 1.0 : 0.76
     rocketExplosionSound.play()
@@ -218,6 +409,13 @@ Item {
     if (enabled) setTargetsEnabled(false)
   }
 
+  // The weapon case offers these as one choice: "free", "targets", "hunt", or "destruction".
+  readonly property string mode: bugHuntEnabled ? "hunt" : targetsEnabled ? "targets" : destructionEnabled ? "destruction" : "free"
+  function setMode(name) {
+    setTargetsEnabled(name === "targets")
+    setDestructionEnabled(name === "destruction")
+    setBugHuntEnabled(name === "hunt")
+  }
   function setBugHuntEnabled(enabled) {
     if (enabled) {
       setTargetsEnabled(false)
@@ -226,13 +424,16 @@ Item {
     bugHuntEnabled = enabled
   }
 
-  function hitBug(x0, y0, x1, y1, radius) {
-    return bugLayerLoader.item ? bugLayerLoader.item.hitProjectile(x0, y0, x1, y1, radius) : false
+  function hitBug(x0, y0, x1, y1, radius, weapon) {
+    return bugLayerLoader.item ? bugLayerLoader.item.hitProjectile(x0, y0, x1, y1, radius, weapon) : false
   }
 
   function arm(id) {
     if (armed) {
+      var huntWeaponChanged = bugHuntEnabled && id !== weapon
       swapWeapon(id)
+      // Picking another weapon from the case mid-hunt starts a fresh round with it.
+      if (huntWeaponChanged && bugLayerLoader.item) bugLayerLoader.item.restart()
       return
     }
     if (!destructionEnabled) {
@@ -278,6 +479,7 @@ Item {
     captureDelay.restart()
   }
   function swapWeapon(id) {
+    cancelSaber()
     weaponWheelOpen = false
     weaponWheelSelection = -1
     automaticHoldEngaged = false
@@ -290,22 +492,21 @@ Item {
     previousRecoil = 0
     previousFlash = 0
     weapon = id
-    weaponReadySound.stop()
-    weaponReadySound.play()
+    playEquipSound(id)
     canvas.requestPaint()
     // Deliberately preserve gunX/gunY, aimAngle, aimFlipped, particles,
     // targets, and destruction state during an in-arena wheel swap.
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
   function equip(id, animateActivation) {
+    cancelSaber()
     weaponWheelOpen = false
     weaponWheelSelection = -1
     weapon = id
     activationShadeAnimation.stop()
     activationShade = animateActivation ? 1 : 0
     armed = true
-    weaponReadySound.stop()
-    weaponReadySound.play()
+    playEquipSound(id)
     if (animateActivation) activationShadeAnimation.start()
     gunPositioned = false
     aimFlipped = false
@@ -395,6 +596,41 @@ Item {
     }
     destructibles = regions
     console.info("Desktop destruction prepared " + regions.length + " regions")
+  }
+  function damageDesktopRay(x0, y0, x1, y1, radius) {
+    if (!destructionEnabled) return false
+    var dx = x1 - x0, dy = y1 - y0
+    var regions = destructibles.slice()
+    var changed = false
+    for (var i = 0; i < regions.length; i++) {
+      var region = regions[i]
+      if (region.destroyed) continue
+      // Clip this frame's beam segment against the rectangle enlarged by
+      // the beam radius. This catches thin and overlapping windows too.
+      var minX = region.x - radius, maxX = region.x + region.width + radius
+      var minY = region.y - radius, maxY = region.y + region.height + radius
+      var enter = 0, leave = 1
+      if (Math.abs(dx) < 0.0001) {
+        if (x0 < minX || x0 > maxX) continue
+      } else {
+        var tx0 = (minX - x0) / dx, tx1 = (maxX - x0) / dx
+        enter = Math.max(enter, Math.min(tx0, tx1))
+        leave = Math.min(leave, Math.max(tx0, tx1))
+      }
+      if (Math.abs(dy) < 0.0001) {
+        if (y0 < minY || y0 > maxY) continue
+      } else {
+        var ty0 = (minY - y0) / dy, ty1 = (maxY - y0) / dy
+        enter = Math.max(enter, Math.min(ty0, ty1))
+        leave = Math.min(leave, Math.max(ty0, ty1))
+      }
+      if (enter > leave) continue
+      region.hits = Math.max(region.hits, region.limit)
+      destroyRegion(region)
+      changed = true
+    }
+    if (changed) destructibles = regions
+    return changed
   }
   function damageDesktop(x, y, amount, style, radius) {
     var next = destructibles.slice()
@@ -640,6 +876,7 @@ Item {
     }
   }
   function holster() {
+    cancelSaber()
     armed = false
     canvas.clear()
     particleBuffer = []
@@ -663,6 +900,9 @@ Item {
     rocketExplosionSound.stop()
     targetHitSound.stop()
     weaponReadySound.stop()
+    saberClashSound.stop()
+    saberClashSound2.stop()
+    saberRetractSound.stop()
     windowBreak1.stop()
     windowBreak2.stop()
     windowBreak3.stop()
@@ -694,21 +934,19 @@ Item {
     if (weapon === "mp5a3") mp5SingleSound.play()
     else if (spec.automatic) akSingleSound.play()
     else if (weapon === "revolver") revolverSound.play()
-    else if (weapon === "bazooka" || weapon === "thick-bazooka") {
-      bazookaLaunchSound.volume = weapon === "thick-bazooka" ? 1.0 : 0.72
-      bazookaLaunchSound.play()
-    }
+    else if (weapon === "bazooka") bazookaLaunchSound.play()
     else pistolSound.play()
   }
   function shoot(withSound) {
-    if (!armed || bossCinematic) return false
-    if (weapon === "bazooka" || weapon === "thick-bazooka") {
-      // Share the cooldown across launchers so swapping cannot bypass it.
+    if (!armed || roundFinished) return false
+    if (weapon === "lightsaber") return igniteSaber()
+    if (weapon === "bazooka") {
       // Reject extra clicks before sound, recoil, flash, or particle creation.
       if (rocketCooldown.running) return false
       rocketCooldown.interval = spec.interval
       rocketCooldown.start()
     }
+    if (bugHuntEnabled && bugLayerLoader.item && !bugLayerLoader.item.acceptHits()) return false
     if (withSound === undefined || withSound) playWeaponSound()
     recoil = spec.recoil
     flash = 1
@@ -727,12 +965,12 @@ Item {
     var next = particles.slice()
     var speed = (17 + Math.random() * 12) * power
     var spread = (Math.random() - 0.5) * 8 * power
-    if (weapon === "bazooka" || weapon === "thick-bazooka") {
+    if (weapon === "bazooka") {
       var rocketImpact = firstDesktopImpact(muzzleX, muzzleY, cosA, sinA)
       next.push({
         x: muzzleX, y: muzzleY, vx: 6 * power * cosA, vy: 6 * power * sinA,
         life: 1, age: 0, explodeAt: 1.52, size: 5 * power,
-        boomScale: weapon === "thick-bazooka" ? 2.5 : 1, kind: 3,
+        boomScale: 1, kind: 3, weapon: weapon,
         impactX: rocketImpact ? rocketImpact.x : 0,
         impactY: rocketImpact ? rocketImpact.y : 0,
         impactRegionId: rocketImpact ? rocketImpact.regionId : "",
@@ -744,7 +982,7 @@ Item {
       next.push({
         x: muzzleX, y: muzzleY,
         vx: speed * cosA, vy: speed * sinA,
-        life: 1, size: 3.6 + power * 0.6, bounces: 0, kind: 6,
+        life: 1, size: 3.6 + spec.power * 0.6, bounces: 0, kind: 6, weapon: weapon,
         impactX: impact ? impact.x : 0,
         impactY: impact ? impact.y : 0,
         impactRegionId: impact ? impact.regionId : "",
@@ -756,7 +994,7 @@ Item {
       spread = (Math.random() - 0.5) * 13 * power
       next.push({ x: muzzleX, y: muzzleY, vx: speed * cosA - spread * sinA, vy: speed * sinA + spread * cosA, life: 0.6 + Math.random() * 0.4, size: 1 + Math.random() * 4 * power, kind: 1 })
     }
-    if (spec.ejectsCase !== false && weapon !== "bazooka" && weapon !== "thick-bazooka") {
+    if (spec.ejectsCase !== false && weapon !== "bazooka") {
       var ejectLocalX = (spec.ejectX - spec.gripX) * spec.scale
       var ejectLocalY = (spec.ejectY - spec.gripY) * spec.scale * (aimFlipped ? -1 : 1)
       var ejectX = gunX + ejectLocalX * cosA - ejectLocalY * sinA
@@ -781,10 +1019,6 @@ Item {
     screen: root.targetScreen
     anchors { top: true; bottom: true; left: true; right: true }
     color: "transparent"
-    contentItem.transform: Translate {
-      x: root.bugHuntEnabled && bugLayerLoader.item ? bugLayerLoader.item.shakeX : 0
-      y: root.bugHuntEnabled && bugLayerLoader.item ? bugLayerLoader.item.shakeY : 0
-    }
     WlrLayershell.namespace: "blow-off-some-steam"
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
@@ -826,7 +1060,7 @@ Item {
 
     Rectangle {
       anchors.fill: parent
-      color: "#15171b"
+      color: root.background
       visible: root.destructionEnabled && root.armed && String(root.desktopSnapshot) === ""
     }
 
@@ -954,6 +1188,7 @@ Item {
       id: keyCatcher
       anchors.fill: parent
       focus: true
+      onActiveFocusChanged: if (!activeFocus) root.retractSaber()
       Keys.onPressed: function(event) {
         if (event.key === Qt.Key_Escape) {
           if (root.weaponWheelOpen) {
@@ -963,8 +1198,14 @@ Item {
           event.accepted = true
           return
         }
+        if (root.roundFinished) return
+        if (root.huntBriefing && (event.key === Qt.Key_Space || event.key === Qt.Key_Return || event.key === Qt.Key_Enter)) {
+          bugLayerLoader.item.startCountdown()
+          event.accepted = true
+          return
+        }
         if (event.key === Qt.Key_Q && !event.isAutoRepeat) {
-          if (!root.weaponWheelOpen) {
+          if (!root.weaponWheelOpen && !root.bugHuntEnabled) {
             root.keyboardWeaponWheel = true
             root.openWeaponWheel(root.gunPositioned ? root.gunX : window.width / 2,
                                  root.gunPositioned ? root.gunY : window.height / 2)
@@ -980,7 +1221,7 @@ Item {
           } else if (event.key === Qt.Key_Right || event.key === Qt.Key_Down) {
             root.weaponWheelSelection = (root.weaponWheelSelection + 1) % root.weaponOptions.length
             event.accepted = true
-          } else if (event.key >= Qt.Key_1 && event.key <= Qt.Key_6) {
+          } else if (event.key >= Qt.Key_1 && event.key < Qt.Key_1 + root.weaponOptions.length) {
             root.weaponWheelSelection = event.key - Qt.Key_1
             root.closeWeaponWheel(true)
             root.keyboardWeaponWheel = false
@@ -1004,7 +1245,7 @@ Item {
     Loader {
       id: bugLayerLoader
       anchors.fill: parent
-      z: 19
+      z: root.roundFinished ? 45 : 19
       active: root.armed && root.bugHuntEnabled
       sourceComponent: BugHuntLayer { arena: root }
     }
@@ -1014,18 +1255,51 @@ Item {
       anchors.fill: parent
       z: 20
       arena: root
+      // Shots and blasts shake with the flies during Fly Hunt.
+      transform: Translate {
+        x: bugLayerLoader.item ? bugLayerLoader.item.shakeX : 0
+        y: bugLayerLoader.item ? bugLayerLoader.item.shakeY : 0
+      }
     }
 
-    Image {
+    Repeater {
+      model: 8
+      delegate: Rectangle {
+        required property int index
+        readonly property var sample: root.saberTrail[index] || null
+        visible: !!sample && root.weapon === "lightsaber"
+        z: 29
+        x: sample ? sample.base.x : 0
+        y: sample ? sample.base.y - height / 2 : 0
+        width: sample ? Math.hypot(sample.tip.x - sample.base.x, sample.tip.y - sample.base.y) : 0
+        height: 9; radius: 4
+        color: root.accent
+        opacity: sample ? Math.max(0, 1 - sample.age / 0.13) * 0.25 : 0
+        transform: Rotation {
+          origin.x: 0; origin.y: 4.5
+          angle: sample ? Math.atan2(sample.tip.y - sample.base.y, sample.tip.x - sample.base.x) * 180 / Math.PI : 0
+        }
+      }
+    }
+    Item {
       visible: root.armed
       z: 30
       x: root.renderGunX - root.spec.gripX * root.spec.scale - root.renderRecoil * Math.cos(root.renderAimAngle * Math.PI / 180)
       y: root.renderGunY - root.spec.gripY * root.spec.scale - root.renderRecoil * Math.sin(root.renderAimAngle * Math.PI / 180)
       width: root.spec.width * root.spec.scale
       height: root.spec.height * root.spec.scale
-      source: Qt.resolvedUrl(root.spec.image)
-      fillMode: Image.PreserveAspectFit
-      smooth: false
+      Image {
+        anchors.fill: parent
+        visible: root.weapon !== "lightsaber"
+        source: visible ? Qt.resolvedUrl(root.spec.image) : ""
+        fillMode: Image.PreserveAspectFit
+        smooth: false
+      }
+      Loader {
+        anchors.fill: parent
+        active: root.armed && root.weapon === "lightsaber"
+        sourceComponent: LightsaberArt { ignition: root.saberIgnition }
+      }
       transform: [
         Scale {
           origin.x: root.spec.gripX * root.spec.scale
@@ -1062,11 +1336,11 @@ Item {
           id: wheelTile
           required property int index
           required property var modelData
-          readonly property real tileAngle: (-90 + index * 60) * Math.PI / 180
+          readonly property real tileAngle: (-90 + index * (360 / root.weaponOptions.length)) * Math.PI / 180
           width: 94
           height: 82
-          x: root.weaponWheelX + Math.cos(tileAngle) * 116 - width / 2
-          y: root.weaponWheelY + Math.sin(tileAngle) * 116 - height / 2
+          x: root.weaponWheelX + Math.cos(tileAngle) * 132 - width / 2
+          y: root.weaponWheelY + Math.sin(tileAngle) * 132 - height / 2
 
           Canvas {
             id: hex
@@ -1084,9 +1358,9 @@ Item {
               c.closePath()
               c.fillStyle = root.weaponWheelSelection === wheelTile.index
                 ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.72)
-                : "#292d38"
+                : root.tint(root.background, 0.92)
               c.fill()
-              c.strokeStyle = root.weaponWheelSelection === wheelTile.index ? root.accent : "#75809a"
+              c.strokeStyle = root.weaponWheelSelection === wheelTile.index ? root.accent : root.muted
               c.lineWidth = root.weaponWheelSelection === wheelTile.index ? 3 : 2
               c.stroke()
             }
@@ -1094,16 +1368,23 @@ Item {
             Connections {
               target: root
               function onWeaponWheelSelectionChanged() { hex.requestPaint() }
-              function onAccentChanged() { hex.requestPaint() }
+              function onThemeSignatureChanged() { hex.requestPaint() }
             }
           }
 
+          Loader {
+            anchors.horizontalCenter: parent.horizontalCenter
+            y: 22; width: 76; height: 28
+            active: root.weaponWheelOpen && wheelTile.modelData.id === "lightsaber"
+            sourceComponent: LightsaberArt {}
+          }
           Image {
+            visible: wheelTile.modelData.id !== "lightsaber"
             anchors.horizontalCenter: parent.horizontalCenter
             y: 14
             width: Math.min(64, wheelTile.modelData.clip.width * 1.15)
             height: 30
-            source: Qt.resolvedUrl(wheelTile.modelData.image)
+            source: visible ? Qt.resolvedUrl(wheelTile.modelData.image) : ""
             sourceClipRect: wheelTile.modelData.clip
             fillMode: Image.PreserveAspectFit
             smooth: false
@@ -1113,7 +1394,8 @@ Item {
             anchors.horizontalCenter: parent.horizontalCenter
             y: 52
             text: wheelTile.modelData.name
-            color: root.weaponWheelSelection === wheelTile.index ? "#ffffff" : "#d4d8e3"
+            color: root.weaponWheelSelection === wheelTile.index ? root.foreground : root.tint(root.foreground, 0.78)
+            font.family: root.fontFamily
             font.pixelSize: 11
             font.bold: true
           }
@@ -1126,13 +1408,13 @@ Item {
         width: 56
         height: 56
         radius: width / 2
-        color: "#d91b1e26"
+        color: root.tint(root.background, 0.85)
         border.width: 2
-        border.color: "#75809a"
+        border.color: root.muted
         Text {
           anchors.centerIn: parent
           text: "󰜃"
-          color: "#d4d8e3"
+          color: root.foreground
           font.pixelSize: 22
         }
       }
@@ -1160,18 +1442,29 @@ Item {
         }
       }
       onPressed: function(event) {
-        if (root.bossCinematic) return
+        if (root.roundFinished) return
         root.pointerX = event.x
         root.pointerY = event.y
+        // The first left-click on the Fly Hunt briefing starts the countdown instead of firing.
+        if (event.button === Qt.LeftButton && root.huntBriefing) {
+          bugLayerLoader.item.startCountdown()
+          return
+        }
         if (event.button === Qt.MiddleButton) {
           root.keyboardWeaponWheel = false
           root.openWeaponWheel(event.x, event.y)
           return
         }
         if (event.button === Qt.RightButton) {
+          // A lit saber keeps burning through the spin, so the spin cuts too.
           weaponSpinSound.stop()
-          weaponSpinSound.play()
+          if (root.weapon !== "lightsaber" || !root.saberHeld) weaponSpinSound.play()
+          root.wakeSimulation()
           trickAnimation.restart()
+          return
+        }
+        if (root.weapon === "lightsaber") {
+          root.igniteSaber()
           return
         }
         root.automaticHoldEngaged = false
@@ -1185,6 +1478,7 @@ Item {
           return
         }
         if (event.button === Qt.RightButton) return
+        if (root.weapon === "lightsaber") { root.retractSaber(); return }
         var pendingSingleShot = root.spec.automatic && !root.automaticHoldEngaged && automaticHoldTimer.running
         automaticHoldTimer.stop()
         fireTimer.stop()
@@ -1193,6 +1487,7 @@ Item {
         if (pendingSingleShot) root.shoot()
       }
       onCanceled: {
+        root.cancelSaber()
         root.closeWeaponWheel(false)
         automaticHoldTimer.stop()
         fireTimer.stop()
@@ -1209,13 +1504,16 @@ Item {
       anchors.margins: 18
       width: hint.implicitWidth + 24
       height: hint.implicitHeight + 14
-      radius: 8
-      color: "#b3151719"
+      radius: root.cornerRadius
+      color: root.tint(root.background, 0.75)
+      border.width: 1
+      border.color: root.tint(root.foreground, 0.12)
       Text {
         id: hint
         anchors.centerIn: parent
-        text: root.weaponName + (root.spec.automatic ? " · click/hold to fire" : " · click to fire") + " · middle/Q-hold weapon wheel · right-click spin · Esc holster"
-        color: "#d9ffffff"
+        text: root.weaponName + (root.weapon === "lightsaber" ? " · hold left-click to ignite · move to cut · right-click spin" : (root.spec.automatic ? " · click/hold to fire" : " · click to fire")) + (root.bugHuntEnabled ? "" : " · middle/Q-hold weapon wheel") + " · right-click spin · Esc holster"
+        color: root.tint(root.foreground, 0.88)
+        font.family: root.fontFamily
         font.pixelSize: 12
       }
     }
@@ -1225,7 +1523,7 @@ Item {
     Rectangle {
       anchors.fill: parent
       z: 29
-      color: "#111419"
+      color: root.background
       opacity: root.activationShade * 0.82
       visible: opacity > 0.001
     }
@@ -1246,7 +1544,7 @@ Item {
     interval: 190
     repeat: false
     onTriggered: {
-      if (root.bossCinematic) return
+      if (root.roundFinished) return
       root.automaticHoldEngaged = true
       root.shoot(false)
       if (root.weapon === "mp5a3") mp5AutomaticSound.play()
@@ -1278,6 +1576,7 @@ Item {
     repeat: true
     onTriggered: root.shoot(false)
   }
+
 
   RemoteSound {
     audio: root.audio
@@ -1437,7 +1736,7 @@ Item {
   }
 
   function simulateStep() {
-    if (bossCinematic) return
+    if (roundFinished) return
     previousRecoil = recoil
     previousFlash = flash
     var hadParticleWork = root.particles.length > 0 || root.pendingEffects.length > 0
@@ -1448,7 +1747,7 @@ Item {
     var next = particleBuffer
     next.length = 0
     for (var i = 0; i < root.particles.length; i++) {
-      if (bossCinematic) break
+      if (roundFinished) break
       var p = root.particles[i]
       p.previousX = p.x
       p.previousY = p.y
@@ -1486,7 +1785,7 @@ Item {
         }
 
         var bulletRadius = p.size * 1.5
-        if (root.bugHuntEnabled && root.hitBug(previousX, previousY, p.x, p.y, bulletRadius)) continue
+        if (root.bugHuntEnabled && root.hitBug(previousX, previousY, p.x, p.y, bulletRadius, p.weapon)) continue
         if (root.projectileHitsTarget(p, bulletRadius)) {
           root.hitTarget()
           continue
@@ -1591,7 +1890,7 @@ Item {
             continue
           }
         }
-        if ((root.bugHuntEnabled && root.hitBug(rocketPreviousX, rocketPreviousY, p.x, p.y, rocketRadius)) || root.projectileHitsTarget(p, rocketRadius)) {
+        if ((root.bugHuntEnabled && root.hitBug(rocketPreviousX, rocketPreviousY, p.x, p.y, rocketRadius, p.weapon)) || root.projectileHitsTarget(p, rocketRadius)) {
           root.hitTarget()
           root.playRocketExplosion(p)
           root.damageDesktop(p.x, p.y, Math.round(40 * (p.boomScale || 1)), "blast", 115 * (p.boomScale || 1))
@@ -1639,13 +1938,15 @@ Item {
 
   FrameAnimation {
     id: simulation
-    running: root.armed && root.simulationAwake && !root.bossCinematic
+    running: root.armed && root.simulationAwake && !root.roundFinished
     onTriggered: {
       // Bound catch-up after a suspended compositor; ordinary missed frames
       // still advance every physics step instead of slowing the simulation.
       var elapsed = Math.min(frameTime, 0.064)
       root.advanceWeapon(elapsed)
-      root.simulationAccumulator += elapsed
+      root.advanceSaber(elapsed)
+      // Fly Hunt hit-stop holds projectiles still for a moment after a kill.
+      if (!(root.bugHuntEnabled && bugLayerLoader.item && bugLayerLoader.item.hitStop > 0)) root.simulationAccumulator += elapsed
       while (root.simulationAccumulator >= 0.016) {
         root.simulateStep()
         root.simulationAccumulator -= 0.016
@@ -1655,7 +1956,7 @@ Item {
       var dy = root.pointerY - root.gunY
       var distance = Math.sqrt(dx * dx + dy * dy)
       var settled = !root.gunPositioned || distance <= 0.001 || Math.abs(distance - root.followDistance) < 0.01
-      if (settled && root.particles.length === 0 && root.pendingEffects.length === 0 && root.recoil === 0 && root.flash === 0) {
+      if (settled && !root.saberHeld && root.saberIgnition === 0 && root.saberTrail.length === 0 && !trickAnimation.running && root.particles.length === 0 && root.pendingEffects.length === 0 && root.recoil === 0 && root.flash === 0) {
         root.simulationAwake = false
         root.simulationBlend = 1
       }

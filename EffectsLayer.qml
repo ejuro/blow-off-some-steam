@@ -4,7 +4,7 @@ import "EffectDrawing.js" as Drawing
 Item {
   id: effects
   required property var arena
-  readonly property var gunFrame: ({ armed: arena.armed, spec: arena.spec,
+  readonly property var gunFrame: ({ armed: arena.armed, spec: arena.spec, accent: arena.accent,
     gunX: arena.renderGunX, gunY: arena.renderGunY, aimAngle: arena.renderAimAngle,
     aimFlipped: arena.aimFlipped, recoil: arena.renderRecoil, flash: arena.renderFlash })
   property var pool: []
@@ -39,7 +39,7 @@ Item {
     muzzle.requestPaint()
   }
 
-  Component { id: particleComponent; EffectParticle {} }
+  Component { id: particleComponent; EffectParticle { accent: effects.arena.accent } }
 
   Canvas {
     id: target

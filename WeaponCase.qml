@@ -14,29 +14,42 @@ Panel {
   property bool doorsOpen: false
   property bool doorAnimationEnabled: true
   property bool launching: false
+  property bool recordsTab: false
   property string pendingWeapon: ""
+  readonly property string mode: arena ? arena.mode : "free"
+  readonly property var bests: arena ? arena.flyRecords.bests : ({})
+  readonly property var modes: [
+    { id: "free", label: "Free play", detail: "no goal, just steam" },
+    { id: "targets", label: "Targets", detail: "roaming bullseye" },
+    { id: "hunt", label: "Fly Hunt", detail: "40 s · one weapon" },
+    { id: "destruction", label: "Destruction", detail: "wreck a frozen desktop" }
+  ]
+  readonly property var weaponTitles: [
+    { id: "glock", title: "GLOCK P80" }, { id: "revolver", title: "COLT 45" },
+    { id: "ak47", title: "AK-47" }, { id: "mp5a3", title: "MP5A3" },
+    { id: "bazooka", title: "M20" }, { id: "lightsaber", title: "LIGHTSABER" }
+  ]
   readonly property var barIdentity: hostWidget || root
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   readonly property color accent: Color.accent
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
   function open() {
-    doorOpenTimer.stop()
-    doorOpenSound.stop()
+    cabinetScroll.contentY = 0
     doorAnimationEnabled = false
     doorsOpen = false
     root.controller.show()
+    // The doors swing open right away; nothing waits on audio.
     Qt.callLater(function() {
+      if (!root.opened) return
       doorAnimationEnabled = true
-      doorOpenTimer.restart()
+      doorsOpen = true
     })
   }
   function close() {
     launchTimer.stop()
     launching = false
     pendingWeapon = ""
-    doorOpenTimer.stop()
-    doorOpenSound.stop()
     doorsOpen = false
     root.controller.hide()
   }
@@ -79,7 +92,7 @@ Panel {
     required property rect artClip
     property var ui
     width: parent ? (parent.width - Style.space(10)) / 2 : Style.space(145)
-    // Keep all three weapon rows and the target toggle visible on shorter displays.
+    // The cabinet scrolls when its contents exceed the display height.
     height: Style.space(94)
     radius: Style.cornerRadius
     color: hover.containsMouse ? Qt.rgba(ui.accent.r, ui.accent.g, ui.accent.b, 0.16) : Qt.rgba(ui.foreground.r, ui.foreground.g, ui.foreground.b, 0.055)
@@ -90,6 +103,7 @@ Panel {
       anchors.centerIn: parent
       spacing: Style.space(5)
       Image {
+        visible: card.weaponId !== "lightsaber"
         anchors.horizontalCenter: parent.horizontalCenter
         width: Math.min(card.width - Style.space(24), card.artClip.width * 1.5)
         height: Style.space(40)
@@ -97,6 +111,14 @@ Panel {
         sourceClipRect: card.artClip
         fillMode: Image.PreserveAspectFit
         smooth: false
+      }
+      Loader {
+        anchors.horizontalCenter: parent.horizontalCenter
+        width: Math.min(card.width - Style.space(24), 115)
+        height: Style.space(40)
+        active: card.weaponId === "lightsaber"
+        visible: active
+        sourceComponent: LightsaberArt {}
       }
       Text {
         anchors.horizontalCenter: parent.horizontalCenter
@@ -106,10 +128,13 @@ Panel {
         font.pixelSize: Style.font.body
         font.bold: true
       }
+      // In Fly Hunt the card shows the score to beat with this weapon.
       Text {
+        readonly property var best: card.ui.mode === "hunt" ? card.ui.bests[card.weaponId] : null
         anchors.horizontalCenter: parent.horizontalCenter
-        text: card.subtitle
-        color: Qt.rgba(card.ui.foreground.r, card.ui.foreground.g, card.ui.foreground.b, 0.55)
+        text: card.ui.mode !== "hunt" ? card.subtitle : best ? "Best " + best.score : "No score yet"
+        color: best ? card.ui.accent : Qt.rgba(card.ui.foreground.r, card.ui.foreground.g, card.ui.foreground.b, 0.55)
+        font.bold: !!best
         font.family: card.ui.fontFamily
         font.pixelSize: Style.font.caption
       }
@@ -122,6 +147,15 @@ Panel {
       onEntered: card.ui.playWeaponHover()
       onClicked: card.ui.choose(card.weaponId)
     }
+  }
+
+  component SectionTitle: Text {
+    property var ui
+    color: Qt.rgba(ui.foreground.r, ui.foreground.g, ui.foreground.b, 0.55)
+    font.family: ui.fontFamily
+    font.pixelSize: Style.font.caption
+    font.bold: true
+    font.letterSpacing: 1.5
   }
 
   component WardrobeDoor: Rectangle {
@@ -185,16 +219,6 @@ Panel {
   }
 
   Timer {
-    id: doorOpenTimer
-    interval: 45
-    onTriggered: {
-      root.doorsOpen = true
-      doorOpenSound.stop()
-      doorOpenSound.play()
-    }
-  }
-
-  Timer {
     id: launchTimer
     interval: 280
     repeat: false
@@ -214,13 +238,6 @@ Panel {
     volume: 0.22
   }
 
-  RemoteSound {
-    audio: root.arena ? root.arena.audio : null
-    id: doorOpenSound
-    source: Qt.resolvedUrl("sounds/doors-open.wav")
-    volume: 0.30
-  }
-
   KeyboardPanel {
     id: panel
     anchorItem: root.anchorItem
@@ -237,246 +254,192 @@ Panel {
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
 
-      Column {
-        id: content
-        width: parent.width
-        spacing: Style.space(12)
-        Text {
-          anchors.horizontalCenter: parent.horizontalCenter
-          text: "BLOW OFF SOME STEAM"
-          color: root.foreground
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.heading
-          font.bold: true
-          font.letterSpacing: 1.5
-        }
-        Text {
-          anchors.horizontalCenter: parent.horizontalCenter
-          text: "Choose your harmless troublemaker"
-          color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.55)
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
-        }
-        Item {
-          id: wardrobe
+      Flickable {
+        id: cabinetScroll
+        anchors.fill: parent
+        contentWidth: width
+        contentHeight: content.implicitHeight
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        Column {
+          id: content
           width: parent.width
-          height: weaponGrid.implicitHeight + Style.space(20)
-          clip: true
-
-          Rectangle {
-            anchors.fill: parent
-            color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.045)
-            border.width: 4
-            border.color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.42)
-            radius: 5
+          spacing: Style.space(12)
+          Text {
+            anchors.horizontalCenter: parent.horizontalCenter
+            text: "BLOW OFF SOME STEAM"
+            color: root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.heading
+            font.bold: true
+            font.letterSpacing: 1.5
           }
-
+          Text {
+            anchors.horizontalCenter: parent.horizontalCenter
+            text: root.recordsTab ? "Your best Fly Hunt with each weapon" : root.mode === "hunt" ? "Pick the one weapon you'll hunt with" : "Choose your harmless troublemaker"
+            color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.55)
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+          }
+          Row {
+            width: parent.width; spacing: Style.space(8)
+            Repeater {
+              model: ["Play", "High scores"]
+              delegate: Rectangle {
+                required property int index
+                required property string modelData
+                width: (parent.width - Style.space(8)) / 2; height: Style.space(32)
+                radius: Style.cornerRadius
+                color: root.recordsTab === (index === 1) ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.22) : "transparent"
+                border.color: root.recordsTab === (index === 1) ? root.accent : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.2)
+                Text { anchors.centerIn: parent; text: modelData; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: { root.recordsTab = index === 1; cabinetScroll.contentY = 0 } }
+              }
+            }
+          }
+          // One row per weapon; the full history stays in the records file.
           Column {
-            id: weaponGrid
-            anchors.fill: parent
-            anchors.margins: Style.space(10)
-            spacing: Style.space(8)
-
-            Row {
-              width: parent.width
-              spacing: Style.space(10)
-              WeaponCard { ui: root; weaponId: "glock"; title: "GLOCK P80"; subtitle: "quick single shots"; artSource: Qt.resolvedUrl("assets/glock-p80.png"); artClip: Qt.rect(18, 8, 30, 20) }
-              WeaponCard { ui: root; weaponId: "revolver"; title: "COLT 45"; subtitle: "heavy single shots"; artSource: Qt.resolvedUrl("assets/revolver-colt45.png"); artClip: Qt.rect(2, 11, 45, 18) }
+            id: highScores
+            width: parent.width; spacing: Style.space(6); visible: root.recordsTab
+            Text {
+              width: parent.width; wrapMode: Text.WordWrap
+              visible: !!(root.arena && root.arena.flyRecords.error)
+              text: visible ? root.arena.flyRecords.error : ""
+              color: Color.urgent; font.family: root.fontFamily; font.pixelSize: Style.font.caption
             }
-            Row {
-              width: parent.width
-              spacing: Style.space(10)
-              WeaponCard { ui: root; weaponId: "ak47"; title: "AK-47"; subtitle: "hold for full auto"; artSource: Qt.resolvedUrl("assets/ak47.png"); artClip: Qt.rect(3, 5, 76, 22) }
-              WeaponCard { ui: root; weaponId: "mp5a3"; title: "MP5A3"; subtitle: "fast full auto"; artSource: Qt.resolvedUrl("assets/mp5a3.png"); artClip: Qt.rect(3, 3, 57, 27) }
-            }
-            Row {
-              width: parent.width
-              spacing: Style.space(10)
-              WeaponCard { ui: root; weaponId: "bazooka"; title: "M20"; subtitle: "one enormous boom"; artSource: Qt.resolvedUrl("assets/bazooka-m20.png"); artClip: Qt.rect(3, 7, 112, 24) }
-              WeaponCard { ui: root; weaponId: "thick-bazooka"; title: "THICK M20"; subtitle: "maximum overkill"; artSource: Qt.resolvedUrl("assets/bazooka-m20-thick.png"); artClip: Qt.rect(35, 3, 112, 28) }
-            }
-            Rectangle {
-              id: targetToggle
-              width: parent.width
-              height: Style.space(26)
-              radius: Style.cornerRadius
-              color: targetHover.containsMouse
-                ? Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.09)
-                : "transparent"
-              border.width: 1
-              border.color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.16)
-
-              Row {
-                anchors.left: parent.left
-                anchors.leftMargin: Style.space(8)
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: Style.space(6)
-                Rectangle {
-                  width: Style.space(14)
-                  height: width
-                  radius: Style.space(2)
-                  color: root.arena && root.arena.targetsEnabled ? root.accent : "transparent"
-                  border.width: 1
-                  border.color: root.arena && root.arena.targetsEnabled
-                    ? root.accent
-                    : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.55)
-                  Text {
-                    anchors.centerIn: parent
-                    text: "✓"
-                    visible: root.arena && root.arena.targetsEnabled
-                    color: "white"
-                    font.pixelSize: Style.space(10)
-                    font.bold: true
-                  }
-                }
-                Text {
-                  anchors.verticalCenter: parent.verticalCenter
-                  text: "Target practice"
-                  color: root.foreground
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
-                }
-              }
-
-              MouseArea {
-                id: targetHover
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: if (root.arena) root.arena.setTargetsEnabled(!root.arena.targetsEnabled)
-              }
-            }
-            Rectangle {
-              id: bugToggle
-              width: parent.width
-              height: Style.space(26)
-              radius: Style.cornerRadius
-              color: bugHover.containsMouse
-                ? Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.09)
-                : "transparent"
-              border.width: 1
-              border.color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.16)
-
-              Row {
-                anchors.left: parent.left
-                anchors.leftMargin: Style.space(8)
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: Style.space(6)
-                Rectangle {
-                  width: Style.space(14)
-                  height: width
-                  radius: Style.space(2)
-                  color: root.arena && root.arena.bugHuntEnabled ? root.accent : "transparent"
-                  border.width: 1
-                  border.color: root.arena && root.arena.bugHuntEnabled
-                    ? root.accent
-                    : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.55)
-                  Text {
-                    anchors.centerIn: parent
-                    text: "✓"
-                    visible: root.arena && root.arena.bugHuntEnabled
-                    color: "white"
-                    font.pixelSize: Style.space(10)
-                    font.bold: true
-                  }
-                }
-                Text {
-                  anchors.verticalCenter: parent.verticalCenter
-                  text: "Fly Hunt"
-                  color: root.foreground
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
-                }
-              }
-
-              MouseArea {
-                id: bugHover
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: if (root.arena) root.arena.setBugHuntEnabled(!root.arena.bugHuntEnabled)
-              }
-            }
-            Rectangle {
-              id: destructionToggle
-              width: parent.width
-              height: Style.space(34)
-              radius: Style.cornerRadius
-              color: destructionHover.containsMouse
-                ? Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.09)
-                : "transparent"
-              border.width: 1
-              border.color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.16)
-
-              Row {
-                anchors.left: parent.left
-                anchors.leftMargin: Style.space(8)
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: Style.space(6)
-                Rectangle {
-                  width: Style.space(14)
-                  height: width
-                  radius: Style.space(2)
-                  color: root.arena && root.arena.destructionEnabled ? root.accent : "transparent"
-                  border.width: 1
-                  border.color: root.arena && root.arena.destructionEnabled
-                    ? root.accent
-                    : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.55)
-                  Text {
-                    anchors.centerIn: parent
-                    text: "✓"
-                    visible: root.arena && root.arena.destructionEnabled
-                    color: "white"
-                    font.pixelSize: Style.space(10)
-                    font.bold: true
-                  }
-                }
+            Repeater {
+              // Highest score first; weapons without a completed hunt keep case order below.
+              model: root.weaponTitles.slice().sort(function(a, b) {
+                var sa = root.bests[a.id] ? root.bests[a.id].score : -1
+                var sb = root.bests[b.id] ? root.bests[b.id].score : -1
+                return sb - sa || root.weaponTitles.indexOf(a) - root.weaponTitles.indexOf(b)
+              })
+              delegate: Rectangle {
+                id: scoreRow
+                required property var modelData
+                required property int index
+                readonly property var best: root.bests[modelData.id] || null
+                readonly property bool champion: !!best && index === 0
+                width: parent.width; height: Style.space(44)
+                radius: Style.cornerRadius
+                color: champion ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.14) : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.05)
+                border.width: 1
+                border.color: champion ? root.accent : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.12)
                 Column {
+                  anchors.left: parent.left; anchors.leftMargin: Style.space(10)
                   anchors.verticalCenter: parent.verticalCenter
-                  spacing: 0
+                  Text { text: scoreRow.modelData.title; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
                   Text {
-                    text: "Desktop destruction"
-                    color: root.foreground
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.caption
-                  }
-                  Text {
-                    text: "Freeze the desktop and make windows destructible"
-                    color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.48)
-                    font.family: root.fontFamily
-                    font.pixelSize: Math.max(9, Style.font.caption - 2)
+                    text: scoreRow.best ? scoreRow.best.kills + " flies · ×" + scoreRow.best.bestCombo + " · " + new Date(scoreRow.best.date).toLocaleDateString(Qt.locale(), Locale.ShortFormat) : "No completed hunt yet"
+                    color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.5)
+                    font.family: root.fontFamily; font.pixelSize: Math.max(9, Style.font.caption - 2)
                   }
                 }
-              }
-
-              MouseArea {
-                id: destructionHover
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: if (root.arena) root.arena.setDestructionEnabled(!root.arena.destructionEnabled)
+                Text {
+                  anchors.right: parent.right; anchors.rightMargin: Style.space(10)
+                  anchors.verticalCenter: parent.verticalCenter
+                  text: scoreRow.best ? scoreRow.best.score : "—"
+                  color: scoreRow.best ? root.accent : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.35)
+                  font.family: root.fontFamily; font.pixelSize: Style.font.heading; font.bold: true
+                }
               }
             }
           }
-
-          WardrobeDoor { leftDoor: true }
-          WardrobeDoor { leftDoor: false }
-
-          Rectangle {
-            anchors.fill: parent
-            z: 30
-            color: "transparent"
-            border.width: 4
-            border.color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.34)
-            radius: 5
+          SectionTitle { ui: root; text: "GAME MODE"; visible: !root.recordsTab }
+          // One game mode at a time, chosen before the weapon.
+          Grid {
+            id: modeGrid
+            visible: !root.recordsTab
+            width: parent.width
+            columns: 2; spacing: Style.space(8)
+            Repeater {
+              model: root.modes
+              delegate: Rectangle {
+                id: modeButton
+                required property var modelData
+                readonly property bool selected: root.mode === modelData.id
+                width: (modeGrid.width - modeGrid.spacing) / 2; height: Style.space(42)
+                radius: Style.cornerRadius
+                color: selected ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.22)
+                  : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, modeHover.containsMouse ? 0.09 : 0.045)
+                border.width: selected ? 2 : 1
+                border.color: selected ? root.accent : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.16)
+                Column {
+                  anchors.centerIn: parent
+                  Text { anchors.horizontalCenter: parent.horizontalCenter; text: modeButton.modelData.label; color: modeButton.selected ? root.accent : root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
+                  Text { anchors.horizontalCenter: parent.horizontalCenter; text: modeButton.modelData.detail; color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.5); font.family: root.fontFamily; font.pixelSize: Math.max(9, Style.font.caption - 2) }
+                }
+                MouseArea {
+                  id: modeHover
+                  anchors.fill: parent
+                  hoverEnabled: true
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: if (root.arena) root.arena.setMode(modeButton.modelData.id)
+                }
+              }
+            }
           }
-        }
-        Text {
-          anchors.horizontalCenter: parent.horizontalCenter
-          text: "Esc holsters · right-click the bar icon also quits"
-          color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.42)
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
+          SectionTitle { ui: root; text: "ARMORY"; visible: !root.recordsTab }
+          Item {
+            id: wardrobe
+            visible: !root.recordsTab
+            width: parent.width
+            height: weaponGrid.implicitHeight + Style.space(20)
+            clip: true
+
+            Rectangle {
+              anchors.fill: parent
+              color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.045)
+              border.width: 4
+              border.color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.42)
+              radius: 5
+            }
+
+            Column {
+              id: weaponGrid
+              anchors.fill: parent
+              anchors.margins: Style.space(10)
+              spacing: Style.space(8)
+
+              Row {
+                width: parent.width
+                spacing: Style.space(10)
+                WeaponCard { ui: root; weaponId: "glock"; title: "GLOCK P80"; subtitle: "quick single shots"; artSource: Qt.resolvedUrl("assets/glock-p80.png"); artClip: Qt.rect(18, 8, 30, 20) }
+                WeaponCard { ui: root; weaponId: "revolver"; title: "COLT 45"; subtitle: "heavy single shots"; artSource: Qt.resolvedUrl("assets/revolver-colt45.png"); artClip: Qt.rect(2, 11, 45, 18) }
+              }
+              Row {
+                width: parent.width
+                spacing: Style.space(10)
+                WeaponCard { ui: root; weaponId: "ak47"; title: "AK-47"; subtitle: "hold for full auto"; artSource: Qt.resolvedUrl("assets/ak47.png"); artClip: Qt.rect(3, 5, 76, 22) }
+                WeaponCard { ui: root; weaponId: "mp5a3"; title: "MP5A3"; subtitle: "fast full auto"; artSource: Qt.resolvedUrl("assets/mp5a3.png"); artClip: Qt.rect(3, 3, 57, 27) }
+              }
+              Row {
+                width: parent.width
+                spacing: Style.space(10)
+                WeaponCard { ui: root; weaponId: "bazooka"; title: "M20"; subtitle: "one enormous boom"; artSource: Qt.resolvedUrl("assets/bazooka-m20.png"); artClip: Qt.rect(3, 7, 112, 24) }
+                WeaponCard { ui: root; weaponId: "lightsaber"; title: "LIGHTSABER"; subtitle: "hold to ignite"; artSource: ""; artClip: Qt.rect(0, 0, 96, 24) }
+              }
+            }
+
+            WardrobeDoor { leftDoor: true }
+            WardrobeDoor { leftDoor: false }
+
+            Rectangle {
+              anchors.fill: parent
+              z: 30
+              color: "transparent"
+              border.width: 4
+              border.color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.34)
+              radius: 5
+            }
+          }
+          Text {
+            anchors.horizontalCenter: parent.horizontalCenter
+            text: root.recordsTab ? "Saved on this device · completed rounds only" : "Esc or right-click the bar icon to holster"
+            color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.42)
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+          }
         }
       }
     }

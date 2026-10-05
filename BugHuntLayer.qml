@@ -1,227 +1,154 @@
 import QtQuick
+import "FlyRound.js" as Rules
+import "SaberGeometry.js" as Saber
 
 Item {
   id: hunt
   required property var arena
   readonly property int flyCount: 4
-  property int kills: 0
-  property bool bossTriggered: false
-  property bool bossActive: false
-  property bool bossDefeated: false
-  readonly property int bossMaxHealth: 120
-  property int bossHealth: bossMaxHealth
-  property real bossX: width / 2
-  property real bossY: -300
-  property real bossTime: 0
-  property real shakeTime: 0
-  property real shakeX: 0
-  property real shakeY: 0
-  property real defeatTime: 0
   property real wingTime: 0
-  readonly property real entranceDuration: 2.8
-  readonly property real revealTime: 1.5
-  readonly property int bossSplatInterval: 30
-  property int nextSplatHealth: bossMaxHealth - bossSplatInterval
-  property bool bossRevealed: false
-  property bool bossEntering: false
-  property bool bossEnraged: false
-  property bool bossDying: false
-  property real enrageTime: 0
-  property real deathTime: 0
-  property real deathX: 0
-  property real deathY: 0
-  property real bossWingPhase: 0
-  property real bossTilt: 0
-  property real bossKick: 0
-  property real scatterTime: 0
-  property bool dashActive: false
-  property real dashElapsed: 0
-  property real dashDuration: 0.26
-  property real dashWait: 0
-  property real dashStartX: 0
-  property real dashStartY: 0
-  property real dashTargetX: 0
-  property real dashTargetY: 0
-  readonly property bool bossFaltering: bossActive && bossHealth <= bossMaxHealth * 0.1
-  readonly property real bossSize: Math.min(520, width * 0.45, height * 0.65)
-  readonly property real bossRadius: bossSize * 0.25
-
-  function recordKill() {
-    kills++
-    if (kills === 20 && !bossTriggered) {
-      bossTriggered = true
-      // Defer entry until the triggering bullet/blast has finished processing.
-      bossEntrance.start()
-    }
+  // The whole round is played with the weapon it was started with.
+  readonly property string weapon: arena.weapon
+  property var round: Rules.fresh(Date.now(), weapon)
+  property int score: 0
+  property int kills: 0
+  property int combo: 0
+  property int bestCombo: 0
+  property int secondsLeft: Rules.roundSeconds
+  property bool finished: false
+  property bool personalBest: false
+  // The weapon's best before this round, for the result screen.
+  property var previousBest: null
+  // Share of the current combo window left; drives the combo timer bar.
+  property real comboLeft: 0
+  // The combo that just ran out, shown greyed while the break animation plays.
+  property int lostCombo: 0
+  property bool comboBreaking: false
+  // Kills from one rocket blast or one continuous saber sweep form a burst.
+  property string burstSource: ""
+  property real burstLast: 0
+  property int burstCount: 0
+  // 3 · 2 · 1 · GO before each round; flies stay away and the clock waits.
+  property bool countingDown: false
+  property int countdownStep: 0
+  readonly property var multiKillNames: ["", "", "DOUBLE!", "TRIPLE!", "QUAD!"]
+  // Hit feel: each kill briefly freezes the flies and projectiles (hit-stop) and
+  // adds shake "trauma" to the play area. The weapon and HUD never shake.
+  property real hitStop: 0
+  property real trauma: 0
+  property real shakeTime: 0
+  readonly property real shakeX: 16 * trauma * trauma * (Math.sin(shakeTime * 71) + 0.5 * Math.sin(shakeTime * 113 + 1.7)) / 1.5
+  readonly property real shakeY: 16 * trauma * trauma * (Math.sin(shakeTime * 83 + 0.6) + 0.5 * Math.sin(shakeTime * 127 + 3.1)) / 1.5
+  Translate { id: worldShake; x: hunt.shakeX; y: hunt.shakeY }
+  function impact() {
+    var burst = Math.max(1, burstCount)
+    var stop = burst >= 2 ? Math.min(0.13, 0.09 + 0.02 * (burst - 2)) : 0.035 + 0.008 * combo
+    hitStop = Math.max(hitStop, stop)
+    trauma = Math.min(1, trauma + 0.12 + 0.05 * combo + (burst >= 2 ? 0.2 : 0))
   }
-  function beginBoss() {
-    bossActive = true; bossHealth = bossMaxHealth
-    bossEntering = true; bossEnraged = false; bossDying = false
-    bossRevealed = false; nextSplatHealth = bossMaxHealth - bossSplatInterval
-    bossTime = 0; bossX = -bossSize; bossY = height * 0.4
-    bossWingPhase = 0; bossTilt = 0; bossKick = 0
-    dashActive = false; dashWait = 0; dashElapsed = 0
-    enrageTime = 0; scatterTime = 0.55
-    shakeTime = 0.3
-    arrivalDelay.start()
-    for (var i = 0; i < flies.count; i++) {
-      var fly = flies.itemAt(i)
-      fly.scattering = fly.alive
-      fly.alive = false
-    }
+  // A new hunt opens on a briefing card; the first left-click starts the countdown.
+  property bool briefing: false
+  function startCountdown() {
+    briefing = false
+    countingDown = true
+    countdownStep = 3
+    countdownTimer.restart()
+    countdownCue()
+    countdownText.pop()
   }
-  function damageBoss(amount) {
-    if (!bossActive || bossEntering) return
-    bossHealth = Math.max(0, bossHealth - amount)
-    bossKick = (bossX < width / 2 ? 1 : -1) * (amount >= 8 ? 28 : 9)
-    if (bossHealth === 0) {
-      // Keep the music loader alive while switching from combat to its fade-out.
-      bossDying = true; bossActive = false; bossEntering = false
-      deathTime = 0; deathX = bossX; deathY = bossY
-      arrivalDelay.stop(); arrivalSound.stop(); enrageSound.stop(); buzzSound.stop()
-    } else {
-      if (bossHealth <= nextSplatHealth) {
-        splatSound.stop(); splatSound.play()
-        while (nextSplatHealth >= bossHealth) nextSplatHealth -= bossSplatInterval
+  // A beep on 3 · 2 · 1 and a higher, longer one on GO.
+  function countdownCue() {
+    var cue = countdownStep > 0 ? countdownBeep : countdownGo
+    cue.stop(); cue.play()
+  }
+  RemoteSound { id: countdownBeep; audio: hunt.arena.audio; source: Qt.resolvedUrl("sounds/countdown-beep.wav"); volume: 0.5 }
+  RemoteSound { id: countdownGo; audio: hunt.arena.audio; source: Qt.resolvedUrl("sounds/countdown-go.wav"); volume: 0.55 }
+  Timer {
+    id: countdownTimer
+    interval: 650; repeat: true
+    onTriggered: {
+      hunt.countdownStep--
+      if (hunt.countdownStep === 0) {
+        hunt.round = Rules.fresh(Date.now(), hunt.weapon)
+        hunt.countingDown = false
       }
-      if (!bossEnraged && bossHealth <= bossMaxHealth * 0.35) {
-        bossEnraged = true; enrageTime = 1.3
-        shakeTime = Math.max(shakeTime, 0.3)
-        enrageSound.play()
-      }
+      if (hunt.countdownStep < 0) { stop(); return }
+      hunt.countdownCue()
+      countdownText.pop()
     }
   }
-  function finishBossDeath() {
-    bossDying = false; bossDefeated = true; defeatTime = 3.5
-    shakeTime = 0.6; bossTilt = 0
-    bossSplat.x = bossX - bossSplat.width / 2
-    bossSplat.y = bossY - bossSplat.height / 2
-    bossSplat.requestPaint()
-    splatSound.stop(); splatSound.play()
+  Component.onCompleted: briefing = true
+  function acceptHits() {
+    if (finished || countingDown || briefing) return false
+    if (Date.now() >= round.deadline) { finishRound(); return false }
+    return true
   }
-  function advanceDash(dt) {
-    if (!dashActive) {
-      dashWait = Math.max(0, dashWait - dt)
-      bossTilt *= Math.exp(-dt * 15)
-      if (dashWait > 0) return
-      dashStartX = bossX; dashStartY = bossY
-      var margin = Math.min(width * 0.25, bossSize * 0.55)
-      var span = Math.max(0, width - margin * 2)
-      // Cross to the opposite side; reroll height and distance once per dash.
-      dashTargetX = margin + span * (bossX < width / 2 ? 0.72 + Math.random() * 0.28 : Math.random() * 0.28)
-      var top = Math.min(height / 2, bossSize * 0.7 + 50)
-      var bottom = Math.max(top, height - bossSize * 0.35)
-      dashTargetY = top + Math.random() * (bottom - top)
-      dashDuration = 0.22 + Math.random() * 0.10
-      dashElapsed = 0; dashActive = true
-      // A short ~6px jolt through the existing transform, not a new effect.
-      shakeTime = Math.max(shakeTime, 0.13)
+  function recordKill(x, y, source, weapon) {
+    var now = Date.now()
+    var before = round.score
+    if (!Rules.kill(round, now)) { finishRound(); return }
+    score = round.score; kills = round.kills
+    combo = round.combo; bestCombo = round.bestCombo
+    if (comboBreaking) { comboBreak.stop(); comboValue.shake = 0; comboBreaking = false }
+    showPopup(x, y, round.score - before, round.combo)
+    // Bullets hit one fly each, so only blasts and saber sweeps can multi-kill.
+    var window = source === "saber" ? 250 : source === "blast" ? 40 : -1
+    if (source === burstSource && now - burstLast <= window) burstCount++
+    else burstCount = 1
+    burstSource = source; burstLast = now
+    if (burstCount >= 2) multiKillText.show(multiKillNames[Math.min(4, burstCount)])
+    impact()
+  }
+  function breakCombo() {
+    if (combo >= 2) { lostCombo = combo; comboBreaking = true; comboBreak.restart() }
+    combo = 0
+  }
+  property int popupCursor: 0
+  function showPopup(x, y, points, multiplier) {
+    popups.itemAt(popupCursor).start(x, y, points, multiplier)
+    popupCursor = (popupCursor + 1) % popups.count
+  }
+  function finishRound() {
+    var record = Rules.finish(round, Date.now())
+    if (!record) return
+    secondsLeft = 0
+    previousBest = arena.flyRecords.bests[round.weapon] || null
+    personalBest = record.score > 0 && (!previousBest || record.score > previousBest.score)
+    hitStop = 0; trauma = 0
+    finished = true
+    resultReveal.restart()
+    arena.flyRecords.add(record)
+  }
+  function restart() {
+    arena.clearRoundEffects()
+    round = Rules.fresh(Date.now(), weapon)
+    score = 0; kills = 0; combo = 0; bestCombo = 0
+    secondsLeft = Rules.roundSeconds; personalBest = false; previousBest = null
+    finalPulse.stop(); edgeGlow.pulse = 0; halfTick.stop()
+    comboBreaking = false; comboBreak.stop(); burstSource = ""; burstCount = 0
+    multiKillText.opacity = 0
+    for (var i = 0; i < flies.count; i++) flies.itemAt(i).reset()
+    for (var j = 0; j < fragments.count; j++) fragments.itemAt(j).active = false
+    for (var k = 0; k < popups.count; k++) popups.itemAt(k).stop()
+    comboLeft = 0
+    hitStop = 0; trauma = 0
+    for (var d = 0; d < droplets.count; d++) droplets.itemAt(d).active = false
+    resultReveal.stop(); shownScore = 0; revealed = false
+    for (var c = 0; c < confetti.count; c++) confetti.itemAt(c).active = false
+    confettiFlying = false
+    finished = false
+    startCountdown()
+  }
+  Timer {
+    interval: 50; running: !hunt.finished; repeat: true
+    onTriggered: {
+      if (hunt.countingDown) return
+      var now = Date.now()
+      hunt.secondsLeft = Rules.remaining(hunt.round, now)
+      if (hunt.combo > 0 && hunt.round.lastKill !== null && now - hunt.round.lastKill > Rules.comboWindow(hunt.round.combo)) hunt.breakCombo()
+      if (now >= hunt.round.deadline) hunt.finishRound()
     }
-    dashElapsed += dt
-    var progress = Math.min(1, dashElapsed / dashDuration)
-    var eased = progress * progress * (3 - 2 * progress)
-    bossX = dashStartX + (dashTargetX - dashStartX) * eased
-    bossY = dashStartY + (dashTargetY - dashStartY) * eased
-    bossTilt = (dashTargetX > dashStartX ? 1 : -1) * Math.sin(progress * Math.PI) * 24
-    if (progress >= 1) {
-      dashActive = false
-      dashWait = 0.10 + Math.random() * 0.10
-    }
   }
-  function advanceBoss(dt) {
-    scatterTime = Math.max(0, scatterTime - dt)
-    bossKick *= Math.exp(-dt * 12)
-    enrageTime = Math.max(0, enrageTime - dt)
-    if (bossDying) {
-      deathTime += dt
-      var fall = Math.min(1, deathTime / 1.8)
-      bossX = deathX + Math.sin(fall * Math.PI * 4) * bossSize * 0.12 * fall
-      bossY = deathY + (Math.max(deathY, height - bossSize * 0.22) - deathY) * fall * fall
-      bossTilt = fall * 430
-      bossWingPhase += dt * Math.max(0, 16 * (1 - fall))
-      if (fall >= 1) finishBossDeath()
-      return
-    }
-    if (!bossActive) return
-    bossTime += dt
-    // Weak wings intermittently stall, but the sprite itself never disappears.
-    var wingRate = bossFaltering ? (Math.sin(bossTime * 23) > 0.25 ? 17 : 2) : (bossEnraged ? 42 : 32)
-    bossWingPhase += dt * wingRate
-    if (bossEntering) {
-      if (bossTime >= revealTime && !bossRevealed) {
-        bossRevealed = true
-        shakeTime = 0.65
-      }
-      var settle = Math.max(0, Math.min(1, (bossTime - revealTime) / 0.4))
-      settle = 1 - Math.pow(1 - settle, 3)
-      bossX = width * 0.5
-      bossY = -bossSize * (1 - settle) + height * 0.44 * settle
-      bossTilt = -18 * (1 - settle)
-      if (bossTime >= entranceDuration) {
-        bossEntering = false; bossTime = 0; shakeTime = 0.4
-        buzzSound.play()
-      }
-      return
-    }
-    if (bossEnraged && !bossFaltering && enrageTime === 0) {
-      advanceDash(dt)
-      return
-    }
-    dashActive = false
-    var targetX = width / 2 + Math.sin(bossTime * 0.7) * width * 0.2
-    var targetY = height * 0.42 + Math.sin(bossTime * 1.3) * height * 0.1
-    var follow = 3
-    bossTilt = Math.sin(bossTime * 1.3) * 5
-    if (bossFaltering) {
-      targetX = width * 0.5 + Math.sin(bossTime * 0.9) * width * 0.12
-      targetY = height * 0.58 + Math.sin(bossTime * 5) * bossSize * 0.06
-      bossTilt = Math.sin(bossTime * 9) * 11
-      follow = 2
-    }
-    if (enrageTime > 0) follow = 0.4
-    bossX += (targetX - bossX) * (1 - Math.exp(-dt * follow))
-    bossY += (targetY - bossY) * (1 - Math.exp(-dt * follow))
-  }
-  Timer { id: bossEntrance; interval: 1; onTriggered: hunt.beginBoss() }
-  function playArrival() {
-    if (!bossEntering) return
-    if (arrivalSound.status === RemoteSound.Ready) arrivalSound.play()
-    if (buzzSound.status === RemoteSound.Ready) buzzSound.play()
-  }
-  Timer { id: arrivalDelay; interval: 150; onTriggered: hunt.playArrival() }
-
-  Loader {
-    id: musicLoader
-    active: (hunt.bossActive && hunt.bossRevealed) || hunt.bossDying
-    sourceComponent: BossMusic { audio: hunt.arena.audio; ending: hunt.bossDying }
-  }
-
-  RemoteSound {
-    audio: hunt.arena.audio
-    id: arrivalSound
-    source: Qt.resolvedUrl("sounds/motherfly-arrival.wav")
-    volume: 0.85
-    onStatusChanged: if (status === RemoteSound.Ready && hunt.bossEntering && !arrivalDelay.running) play()
-  }
-  RemoteSound {
-    audio: hunt.arena.audio
-    id: buzzSound
-    source: Qt.resolvedUrl("sounds/motherfly-buzz.wav")
-    loops: RemoteSound.Infinite
-    volume: hunt.bossEntering ? 0.32 : hunt.bossFaltering ? 0.06 + Math.max(0, Math.sin(hunt.bossTime * 23)) * 0.16 : (hunt.bossEnraged ? 0.25 : 0.14)
-    onStatusChanged: if (status === RemoteSound.Ready && hunt.bossActive && !arrivalDelay.running) play()
-  }
-  RemoteSound {
-    audio: hunt.arena.audio
-    id: enrageSound
-    source: Qt.resolvedUrl("sounds/motherfly-enrage.wav")
-    volume: 0.65
-  }
-  Component.onDestruction: {
-    arrivalSound.stop(); buzzSound.stop(); enrageSound.stop(); splatSound.stop()
-  }
-
-
   // One preloaded voice also avoids stacking four identical sounds on a blast.
   RemoteSound {
     audio: hunt.arena.audio
@@ -230,15 +157,10 @@ Item {
     volume: 0.45
   }
 
-  function hitProjectile(x0, y0, x1, y1, radius) {
+  function hitProjectile(x0, y0, x1, y1, radius, weapon) {
     var dx = x1 - x0, dy = y1 - y0
     var lengthSquared = dx * dx + dy * dy
-    if (bossActive) {
-      var bt = lengthSquared ? Math.max(0, Math.min(1, ((bossX - x0) * dx + (bossY - y0) * dy) / lengthSquared)) : 0
-      if (Math.pow(x0 + bt * dx - bossX, 2) + Math.pow(y0 + bt * dy - bossY, 2) <= Math.pow(bossRadius + radius, 2)) { damageBoss(1); return true }
-      return false
-    }
-    if (bossTriggered && !bossDefeated) return false
+    if (!hunt.acceptHits()) return false
     var nearest = null, nearestT = 2
     for (var i = 0; i < flies.count; i++) {
       var fly = flies.itemAt(i)
@@ -248,44 +170,96 @@ Item {
       if (ex * ex + ey * ey <= Math.pow(radius + 19, 2) && t < nearestT) { nearest = fly; nearestT = t }
     }
     if (!nearest) return false
-    nearest.hit()
+    nearest.hit("projectile", weapon, dx, dy)
     return true
   }
 
-  function hitBlast(x, y, radius) {
-    if (bossActive) {
-      if (Math.pow(bossX - x, 2) + Math.pow(bossY - y, 2) <= Math.pow(radius + bossRadius, 2)) damageBoss(8)
-      return
-    }
-    if (bossTriggered && !bossDefeated) return
+  function hitBlast(x, y, radius, weapon) {
+    if (!hunt.acceptHits()) return
     for (var i = 0; i < flies.count; i++) {
       var fly = flies.itemAt(i)
-      if (fly && fly.alive && Math.pow(fly.x - x, 2) + Math.pow(fly.y - y, 2) <= Math.pow(radius + 19, 2)) fly.hit()
+      if (fly && fly.alive && Math.pow(fly.x - x, 2) + Math.pow(fly.y - y, 2) <= Math.pow(radius + 19, 2)) fly.hit("blast", weapon, fly.x - x, fly.y - y)
+    }
+  }
+
+  property int fragmentCursor: 0
+  function hitSaber(previous, current) {
+    if (!acceptHits()) return false
+    var struck = false
+    var angle = Math.atan2(current.tip.y - current.base.y, current.tip.x - current.base.x)
+    // Spray follows the swing; a still blade sprays across itself.
+    var swingX = current.tip.x - previous.tip.x, swingY = current.tip.y - previous.tip.y
+    if (swingX * swingX + swingY * swingY < 1) { swingX = -Math.sin(angle); swingY = Math.cos(angle) }
+    for (var i = 0; i < flies.count; i++) {
+      var fly = flies.itemAt(i)
+      if (!fly || !fly.alive || !Saber.hits(fly.x, fly.y, 25, previous, current)) continue
+      var frame = Math.floor(wingTime * (28 + fly.index * 2)) % 8
+      for (var side = -1; side <= 1; side += 2) {
+        fragments.itemAt(fragmentCursor).start(fly.x, fly.y, angle, side, frame, fly.facingLeft)
+        fragmentCursor = (fragmentCursor + 1) % fragments.count
+      }
+      fly.hit("saber", "lightsaber", swingX, swingY)
+      struck = true
+    }
+    return struck
+  }
+  Repeater { id: fragments; model: 32; delegate: FlyFragment { transform: worldShake } }
+
+  // Drops sprayed along the hit direction; a fixed pool, recycled round-robin.
+  property int dropletCursor: 0
+  function spray(px, py, dirX, dirY, count) {
+    var length = Math.sqrt(dirX * dirX + dirY * dirY)
+    var heading = length > 0.001 ? Math.atan2(dirY, dirX) : -Math.PI / 2
+    for (var i = 0; i < count; i++) {
+      droplets.itemAt(dropletCursor).start(px, py, heading + (Math.random() - 0.5) * 1.1, 260 + Math.random() * 380)
+      dropletCursor = (dropletCursor + 1) % droplets.count
+    }
+  }
+  Repeater {
+    id: droplets
+    model: 64
+    delegate: Rectangle {
+      property bool active: false
+      property real vx: 0
+      property real vy: 0
+      property real age: 0
+      property real life: 0.6
+      visible: active
+      transform: worldShake
+      width: 4 + (index % 4) * 1.5; height: width; radius: width / 2
+      color: hunt.arena.accent
+      opacity: Math.max(0, 1 - age / life)
+      function start(px, py, heading, speed) {
+        x = px - width / 2; y = py - height / 2; age = 0
+        life = 0.45 + Math.random() * 0.3
+        vx = Math.cos(heading) * speed; vy = Math.sin(heading) * speed - 60
+        active = true
+      }
+      function advance(dt) {
+        if (!active) return
+        age += dt
+        if (age >= life) { active = false; return }
+        x += vx * dt; y += vy * dt
+        vx *= Math.exp(-dt * 3); vy += 900 * dt
+      }
     }
   }
 
   // One shared movement callback; four persistent sprites and four small splats.
   FrameAnimation {
-    running: hunt.visible && hunt.arena.armed
+    running: hunt.visible && hunt.arena.armed && !hunt.finished
     onTriggered: {
       var dt = Math.min(frameTime, 0.05)
+      hunt.shakeTime += dt
+      hunt.trauma = Math.max(0, hunt.trauma - dt * 2.2)
+      if (hunt.hitStop > 0) { hunt.hitStop = Math.max(0, hunt.hitStop - dt); return }
       hunt.wingTime += dt
-      hunt.advanceBoss(dt)
-      if (hunt.shakeTime > 0) {
-        hunt.shakeTime = Math.max(0, hunt.shakeTime - dt)
-        var strength = 18 * Math.min(1, hunt.shakeTime / 0.4)
-        hunt.shakeX = Math.sin(hunt.shakeTime * 83) * strength
-        hunt.shakeY = Math.cos(hunt.shakeTime * 107) * strength * 0.65
-      } else { hunt.shakeX = 0; hunt.shakeY = 0 }
-      hunt.defeatTime = Math.max(0, hunt.defeatTime - dt)
-      if (hunt.scatterTime > 0)
-        for (var j = 0; j < flies.count; j++) {
-          var fleeing = flies.itemAt(j)
-          fleeing.x += (j % 2 ? 1 : -1) * dt * 1000
-          fleeing.y -= dt * 600
-        }
-      if (!hunt.bossTriggered || hunt.bossDefeated)
-        for (var i = 0; i < flies.count; i++) flies.itemAt(i).advance(dt)
+      hunt.comboLeft = hunt.combo > 0 && hunt.round.lastKill !== null
+        ? Math.max(0, 1 - (Date.now() - hunt.round.lastKill) / Rules.comboWindow(hunt.round.combo)) : 0
+      for (var j = 0; j < fragments.count; j++) fragments.itemAt(j).advance(dt)
+      for (var k = 0; k < droplets.count; k++) droplets.itemAt(k).advance(dt)
+      if (!hunt.acceptHits()) return
+      for (var i = 0; i < flies.count; i++) flies.itemAt(i).advance(dt)
     }
   }
 
@@ -296,7 +270,6 @@ Item {
       id: fly
       required property int index
       property bool alive: false
-      property bool scattering: false
       property real vx: 0
       property real vy: 0
       property real destinationX: 0
@@ -308,7 +281,15 @@ Item {
       property bool facingLeft: false
       property real speed: 100
       property real baseSpeed: 100
+      // True while flying in from off screen; the edge clamp waits until it is inside.
+      property bool entering: false
+      property real splatScale: 1
+      transform: worldShake
 
+      function reset() {
+        alive = false; respawnTime = index * 0.12
+        splatFade.stop(); splat.opacity = 0
+      }
       function randomX() { return Math.min(hunt.width / 2, 65) + Math.random() * Math.max(0, hunt.width - 130) }
       function randomY() { return Math.min(hunt.height / 2, 65) + Math.random() * Math.max(0, hunt.height - 130) }
       function chooseDestination() {
@@ -317,12 +298,20 @@ Item {
         speed = baseSpeed * (0.85 + Math.random() * 0.3)
       }
       function spawn() {
-        x = randomX(); y = randomY(); vx = 0; vy = 0
+        // Arrive from just past a random screen edge instead of appearing in place.
+        var edge = Math.floor(Math.random() * 4)
+        x = edge === 0 ? -50 : edge === 1 ? hunt.width + 50 : randomX()
+        y = edge === 2 ? -50 : edge === 3 ? hunt.height + 50 : randomY()
+        entering = true
         // Keep a mix of speeds on screen; reroll within each tier on respawn.
         var minimum = [90, 180, 340, 560]
         var spread = [80, 130, 190, 240]
         baseSpeed = minimum[index] + Math.random() * spread[index]
-        chooseDestination(); scattering = false; alive = true
+        chooseDestination()
+        var dx = destinationX - x, dy = destinationY - y, distance = Math.max(1, Math.sqrt(dx * dx + dy * dy))
+        vx = dx / distance * speed; vy = dy / distance * speed
+        steeringTime = Math.max(steeringTime, Math.min(2.5, distance / speed))
+        alive = true
       }
       function advance(dt) {
         if (!alive) {
@@ -337,20 +326,28 @@ Item {
         var blend = 1 - Math.exp(-dt * (index >= 2 ? 7 : 4))
         vx += (dx / Math.max(1, distance) * speed - vx) * blend
         vy += (dy / Math.max(1, distance) * speed - vy) * blend
-        x = Math.max(35, Math.min(Math.max(35, hunt.width - 35), x + vx * dt))
-        y = Math.max(45, Math.min(Math.max(45, hunt.height - 35), y + vy * dt))
+        x += vx * dt; y += vy * dt
+        var minX = 35, maxX = Math.max(35, hunt.width - 35), minY = 45, maxY = Math.max(45, hunt.height - 35)
+        if (entering && x >= minX && x <= maxX && y >= minY && y <= maxY) entering = false
+        if (!entering) {
+          x = Math.max(minX, Math.min(maxX, x))
+          y = Math.max(minY, Math.min(maxY, y))
+        }
         if (vx < -12) facingLeft = true
         else if (vx > 12) facingLeft = false
       }
-      function hit() {
-        if (!alive) return
+      function hit(source, weapon, dirX, dirY) {
+        if (!alive || !hunt.acceptHits()) return
         alive = false
         splatSound.stop()
         splatSound.play()
-        respawnTime = 2.4 + Math.random() * 1.4
+        respawnTime = 0.25 + Math.random() * 0.30
+        hunt.recordKill(x, y, source, weapon)
+        // Splats and sprays grow with the combo.
+        splatScale = 0.85 + 0.15 * hunt.combo
         splatX = x; splatY = y
         splatFade.stop(); splat.opacity = 1; splat.requestPaint(); splatFade.start()
-        hunt.recordKill()
+        hunt.spray(x, y, dirX || 0, dirY || 0, 4 + 2 * hunt.combo)
       }
       Component.onCompleted: respawnTime = index * 0.12
 
@@ -366,9 +363,9 @@ Item {
         // Drive valid frames from the shared flight clock instead.
         paused: true
         currentFrame: Math.floor(hunt.wingTime * frameRate) % frameCount
-        running: (fly.alive || fly.scattering) && hunt.visible
-        visible: fly.alive || (fly.scattering && hunt.scatterTime > 0)
-        opacity: fly.alive ? 1 : hunt.scatterTime / 0.55
+        running: fly.alive && hunt.visible
+        visible: fly.alive
+        opacity: 1
         transform: Scale { origin.x: 44; origin.y: 54; xScale: fly.facingLeft ? -1 : 1 }
       }
 
@@ -377,6 +374,7 @@ Item {
         // Keep the mark at the impact point while this slot respawns elsewhere.
         x: fly.splatX - fly.x - 48; y: fly.splatY - fly.y - 48
         width: 96; height: 96
+        scale: fly.splatScale
         opacity: 0
         visible: opacity > 0
         readonly property color ink: hunt.arena.accent
@@ -412,97 +410,420 @@ Item {
     }
   }
 
+  // HUD and results use the active theme, like the weapon case.
+  readonly property var ui: hunt.arena
+  component HudValue: Row {
+    property string label
+    property string value
+    property color valueColor: hunt.ui.foreground
+    spacing: 7
+    Text { anchors.baseline: valueText.baseline; text: parent.label; color: hunt.ui.muted; font.family: hunt.ui.fontFamily; font.pixelSize: 13; font.bold: true }
+    Text { id: valueText; text: parent.value; color: parent.valueColor; font.family: hunt.ui.fontFamily; font.pixelSize: 22; font.bold: true }
+  }
   Rectangle {
-    anchors.fill: parent
-    color: "#111018"
-    opacity: hunt.bossActive || hunt.bossDying ? (hunt.bossEntering ? 0.36 : 0.2) : 0
-    visible: opacity > 0
-    Behavior on opacity { NumberAnimation { duration: 300 } }
+    id: hudBox
+    anchors.top: parent.top; anchors.topMargin: 48
+    anchors.horizontalCenter: parent.horizontalCenter
+    width: hud.implicitWidth + 44; height: 58; radius: hunt.ui.cornerRadius
+    color: hunt.ui.tint(hunt.ui.background, 0.88)
+    border.width: 1; border.color: hunt.ui.tint(hunt.ui.accent, 0.55)
+    visible: !hunt.finished && !hunt.briefing
+    Row {
+      id: hud; anchors.centerIn: parent; spacing: 26
+      HudValue {
+        id: timeValue
+        label: "TIME"; value: hunt.secondsLeft + "s"
+        valueColor: hunt.secondsLeft <= 10 ? hunt.ui.urgent : hunt.ui.foreground
+        SequentialAnimation {
+          id: timePop
+          NumberAnimation { target: timeValue; property: "scale"; to: 1.3; duration: 70; easing.type: Easing.OutQuad }
+          NumberAnimation { target: timeValue; property: "scale"; to: 1; duration: 260; easing.type: Easing.OutBack }
+        }
+      }
+      HudValue { label: "BEST"; value: hunt.arena.flyRecords.bests[hunt.weapon] ? hunt.arena.flyRecords.bests[hunt.weapon].score : "—"; valueColor: hunt.ui.muted }
+      HudValue { label: "SCORE"; value: hunt.score }
+      HudValue { label: "FLIES"; value: hunt.kills }
+      HudValue {
+        id: comboValue
+        property real shake: 0
+        label: "COMBO"
+        value: "×" + (hunt.comboBreaking ? hunt.lostCombo : Math.max(1, hunt.combo))
+        valueColor: hunt.comboBreaking ? hunt.ui.muted : hunt.combo > 1 ? hunt.ui.accent : hunt.ui.foreground
+        opacity: hunt.comboBreaking ? 0.7 : 1
+        transform: Translate { x: comboValue.shake }
+        // A short shake and grey-out when a combo runs out.
+        SequentialAnimation {
+          id: comboBreak
+          NumberAnimation { target: comboValue; property: "shake"; to: -7; duration: 40 }
+          NumberAnimation { target: comboValue; property: "shake"; to: 6; duration: 60 }
+          NumberAnimation { target: comboValue; property: "shake"; to: -4; duration: 60 }
+          NumberAnimation { target: comboValue; property: "shake"; to: 2; duration: 60 }
+          NumberAnimation { target: comboValue; property: "shake"; to: 0; duration: 50 }
+          PauseAnimation { duration: 450 }
+          ScriptAction { script: hunt.comboBreaking = false }
+        }
+        SequentialAnimation {
+          id: comboPunch
+          NumberAnimation { target: comboValue; property: "scale"; to: 1.35; duration: 70; easing.type: Easing.OutQuad }
+          NumberAnimation { target: comboValue; property: "scale"; to: 1; duration: 220; easing.type: Easing.OutBack }
+        }
+        Connections {
+          target: hunt
+          function onComboChanged() { if (hunt.combo > 1) comboPunch.restart() }
+        }
+      }
+    }
+  }
+  // Drains from both ends over the combo window; kill again before it empties.
+  Rectangle {
+    anchors.top: hudBox.bottom; anchors.topMargin: 6
+    anchors.horizontalCenter: hudBox.horizontalCenter
+    width: hudBox.width; height: 4; radius: 2
+    // Flashes the urgent colour once when the combo breaks.
+    color: hunt.comboBreaking ? hunt.ui.tint(hunt.ui.urgent, 0.7) : hunt.ui.tint(hunt.ui.foreground, 0.12)
+    Behavior on color { ColorAnimation { duration: 120 } }
+    visible: hudBox.visible && (hunt.combo > 0 || hunt.comboBreaking)
+    Rectangle {
+      anchors.centerIn: parent
+      width: parent.width * hunt.comboLeft; height: parent.height; radius: parent.radius
+      color: hunt.ui.accent
+    }
+  }
+
+  // "DOUBLE!" etc. under the HUD when one blast or sweep kills several flies.
+  Text {
+    id: multiKillText
+    anchors.horizontalCenter: hudBox.horizontalCenter
+    y: hudBox.y + hudBox.height + 26
+    z: 6
+    opacity: 0
+    color: hunt.ui.accent
+    style: Text.Outline; styleColor: hunt.ui.tint(hunt.ui.background, 0.85)
+    font.family: hunt.ui.fontFamily; font.pixelSize: 34; font.bold: true
+    function show(label) { text = label; multiKillPop.restart() }
+    SequentialAnimation {
+      id: multiKillPop
+      PropertyAction { target: multiKillText; property: "opacity"; value: 1 }
+      NumberAnimation { target: multiKillText; property: "scale"; from: 0.6; to: 1.25; duration: 90; easing.type: Easing.OutQuad }
+      NumberAnimation { target: multiKillText; property: "scale"; to: 1; duration: 160 }
+      PauseAnimation { duration: 550 }
+      NumberAnimation { target: multiKillText; property: "opacity"; to: 0; duration: 350 }
+    }
+  }
+
+  Text {
+    id: countdownText
+    anchors.centerIn: parent
+    z: 7
+    visible: hunt.countingDown || countdownPop.running
+    text: hunt.countdownStep > 0 ? hunt.countdownStep : "GO!"
+    color: hunt.countdownStep > 0 ? hunt.ui.foreground : hunt.ui.accent
+    style: Text.Outline; styleColor: hunt.ui.tint(hunt.ui.background, 0.85)
+    font.family: hunt.ui.fontFamily; font.pixelSize: 120; font.bold: true
+    function pop() { countdownPop.restart() }
+    ParallelAnimation {
+      id: countdownPop
+      NumberAnimation { target: countdownText; property: "scale"; from: 1.6; to: 1; duration: 260; easing.type: Easing.OutBack }
+      SequentialAnimation {
+        PropertyAction { target: countdownText; property: "opacity"; value: 1 }
+        PauseAnimation { duration: hunt.countdownStep > 0 ? 330 : 380 }
+        NumberAnimation { target: countdownText; property: "opacity"; to: 0; duration: 260 }
+      }
+    }
+  }
+
+  // Floating "+points ×combo" at each kill.
+  Repeater {
+    id: popups
+    model: 12
+    delegate: Item {
+      id: popup
+      property int points: 0
+      property int multiplier: 1
+      property real startY: 0
+      visible: false
+      z: 5
+      function start(px, py, gained, combo) {
+        points = gained; multiplier = combo
+        x = px; startY = py - 34
+        rise.restart()
+      }
+      function stop() { rise.stop(); visible = false }
+      Row {
+        x: -width / 2; y: -height / 2
+        spacing: 5
+        Text {
+          text: "+" + popup.points
+          color: hunt.ui.accent
+          style: Text.Outline; styleColor: hunt.ui.tint(hunt.ui.background, 0.85)
+          font.family: hunt.ui.fontFamily; font.pixelSize: 20 + popup.multiplier * 3; font.bold: true
+        }
+        Text {
+          visible: popup.multiplier > 1
+          anchors.baseline: parent.children[0].baseline
+          text: "×" + popup.multiplier
+          color: hunt.ui.foreground
+          style: Text.Outline; styleColor: hunt.ui.tint(hunt.ui.background, 0.85)
+          font.family: hunt.ui.fontFamily; font.pixelSize: 15; font.bold: true
+        }
+      }
+      ParallelAnimation {
+        id: rise
+        onStarted: { popup.opacity = 1; popup.visible = true }
+        onFinished: popup.visible = false
+        NumberAnimation { target: popup; property: "y"; from: popup.startY; to: popup.startY - 60; duration: 950; easing.type: Easing.OutCubic }
+        SequentialAnimation {
+          NumberAnimation { target: popup; property: "scale"; from: 0.5; to: 1.2; duration: 90; easing.type: Easing.OutQuad }
+          NumberAnimation { target: popup; property: "scale"; to: 1; duration: 160 }
+        }
+        SequentialAnimation {
+          PauseAnimation { duration: 500 }
+          NumberAnimation { target: popup; property: "opacity"; to: 0; duration: 450 }
+        }
+      }
+    }
+  }
+  Rectangle {
+    anchors.fill: parent; color: hunt.ui.tint(hunt.ui.background, 0.78); visible: hunt.finished
+    MouseArea { anchors.fill: parent; acceptedButtons: Qt.AllButtons }
+    Rectangle {
+      anchors.centerIn: parent; width: Math.min(460, parent.width - 32)
+      height: results.implicitHeight + 48; radius: hunt.ui.cornerRadius
+      color: hunt.ui.tint(hunt.ui.background, 0.96)
+      border.width: 2; border.color: hunt.ui.accent
+      Column {
+        id: results; anchors.centerIn: parent; width: parent.width - 48; spacing: 18
+        Text {
+          id: resultTitle
+          width: parent.width; horizontalAlignment: Text.AlignHCenter
+          text: hunt.revealed && hunt.personalBest ? "NEW PERSONAL BEST!" : "TIME’S UP!"
+          color: hunt.ui.accent; font.family: hunt.ui.fontFamily; font.pixelSize: 24; font.bold: true
+        }
+        Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: Math.round(hunt.shownScore) + " points"; color: hunt.ui.foreground; font.family: hunt.ui.fontFamily; font.pixelSize: 36; font.bold: true }
+        Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: hunt.kills + " flies · best combo ×" + hunt.bestCombo; color: hunt.ui.tint(hunt.ui.foreground, 0.85); font.family: hunt.ui.fontFamily; font.pixelSize: 18 }
+        // How this round compares with the weapon's previous best.
+        Text {
+          id: verdict
+          width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap
+          opacity: 0
+          readonly property string weaponName: hunt.arena.weaponNames([hunt.round.weapon || hunt.weapon])
+          text: !hunt.previousBest ? "First completed hunt with the " + weaponName
+            : hunt.personalBest ? "+" + (hunt.score - hunt.previousBest.score) + " over your " + weaponName + " best of " + hunt.previousBest.score
+            : (hunt.previousBest.score - hunt.score) + " short of your " + weaponName + " best of " + hunt.previousBest.score
+          color: hunt.personalBest ? hunt.ui.accent : hunt.ui.muted
+          font.family: hunt.ui.fontFamily; font.pixelSize: 15; font.bold: hunt.personalBest
+        }
+        Text { width: parent.width; visible: text.length > 0; wrapMode: Text.WordWrap; text: hunt.arena.flyRecords.error; color: hunt.ui.urgent; font.family: hunt.ui.fontFamily }
+        Rectangle {
+          width: parent.width; height: 46; radius: hunt.ui.cornerRadius; color: againHover.containsMouse ? Qt.lighter(hunt.ui.accent, 1.12) : hunt.ui.accent
+          Text { anchors.centerIn: parent; text: "Play again"; color: hunt.ui.background; font.family: hunt.ui.fontFamily; font.pixelSize: 18; font.bold: true }
+          MouseArea { id: againHover; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: hunt.restart() }
+        }
+        Rectangle {
+          width: parent.width; height: 40; radius: hunt.ui.cornerRadius
+          color: hunt.ui.tint(hunt.ui.foreground, closeHover.containsMouse ? 0.12 : 0.06)
+          border.width: 1; border.color: hunt.ui.tint(hunt.ui.foreground, 0.18)
+          Text { anchors.centerIn: parent; text: "Close · Esc"; color: hunt.ui.foreground; font.family: hunt.ui.fontFamily; font.pixelSize: 16 }
+          MouseArea { id: closeHover; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: hunt.arena.holster() }
+        }
+      }
+    }
+  }
+
+  // Results: the score counts up, then the comparison appears; a new best
+  // bursts confetti with a fanfare.
+  property real shownScore: 0
+  property bool revealed: false
+  SequentialAnimation {
+    id: resultReveal
+    ScriptAction { script: { hunt.shownScore = 0; hunt.revealed = false; verdict.opacity = 0 } }
+    PauseAnimation { duration: 250 }
+    NumberAnimation { target: hunt; property: "shownScore"; from: 0; to: hunt.score; duration: Math.min(1400, 500 + hunt.score / 40); easing.type: Easing.OutCubic }
+    ScriptAction { script: {
+      hunt.revealed = true
+      if (hunt.personalBest) { fanfare.stop(); fanfare.play(); hunt.launchConfetti() }
+    } }
+    ParallelAnimation {
+      NumberAnimation { target: verdict; property: "opacity"; from: 0; to: 1; duration: 300 }
+      SequentialAnimation {
+        NumberAnimation { target: resultTitle; property: "scale"; to: hunt.personalBest ? 1.3 : 1; duration: 110; easing.type: Easing.OutQuad }
+        NumberAnimation { target: resultTitle; property: "scale"; to: 1; duration: 260; easing.type: Easing.OutBack }
+      }
+    }
+  }
+  RemoteSound {
+    id: fanfare
+    audio: hunt.arena.audio
+    source: Qt.resolvedUrl("sounds/new-best-fanfare.wav")
+    volume: 0.5
+  }
+  property bool confettiFlying: false
+  function launchConfetti() {
+    for (var i = 0; i < confetti.count; i++) confetti.itemAt(i).start()
+    confettiFlying = true
   }
   Item {
-    width: hunt.bossSize; height: width
-    x: hunt.bossX - width * 0.55 + hunt.bossKick; y: hunt.bossY - height * 0.675
-    visible: (hunt.bossActive && (!hunt.bossEntering || hunt.bossRevealed)) || hunt.bossDying
-    transform: Rotation { origin.x: hunt.bossSize * 0.55; origin.y: hunt.bossSize * 0.675; angle: hunt.bossTilt }
-    AnimatedSprite {
-      anchors.fill: parent
-      source: Qt.resolvedUrl("assets/fly-spritesheet.png")
-      frameWidth: 443; frameHeight: 443; frameCount: 8
-      frameRate: 32; interpolate: true
-      paused: true
-      currentFrame: Math.floor(hunt.bossWingPhase) % frameCount
-      running: hunt.bossActive || hunt.bossDying
-    }
-    Rectangle {
-      x: parent.width * 0.69; y: parent.height * 0.505
-      width: parent.width * 0.12; height: parent.height * 0.16
-      radius: width / 2
-      color: "#ff493b"; border.color: "#ffb078"; border.width: 2
-      opacity: hunt.bossEnraged && !hunt.bossDying ? 0.28 + Math.sin(hunt.bossTime * 7) * 0.08 : 0
-      Behavior on opacity { NumberAnimation { duration: 120 } }
-    }
-  }
-  Column {
-    y: hunt.bossEntering || hunt.enrageTime > 0 ? hunt.height * 0.16 : 64
-    Behavior on y { NumberAnimation { duration: 450; easing.type: Easing.OutCubic } }
-    anchors.horizontalCenter: parent.horizontalCenter
-    width: Math.min(520, hunt.width * 0.7)
-    spacing: 10
-    visible: hunt.bossActive || hunt.bossDying || hunt.defeatTime > 0
-    Text {
-      anchors.horizontalCenter: parent.horizontalCenter
-      text: hunt.bossDefeated ? "REVENGE. SERVED." : hunt.bossEntering && !hunt.bossRevealed ? "SOMETHING IS COMING…" : hunt.enrageTime > 0 ? "MOTHERFLY ENRAGED" : "THE MOTHERFLY"
-      font.pixelSize: hunt.bossEntering || hunt.enrageTime > 0 ? 36 : 28; font.bold: true; font.letterSpacing: 4
-      color: hunt.enrageTime > 0 ? "#ff795b" : "white"; style: Text.Outline; styleColor: "#111111"
-    }
-    Text {
-      anchors.horizontalCenter: parent.horizontalCenter
-      text: hunt.bossDying ? "GOING DOWN." : hunt.bossEntering ? "SHE HEARD WHAT YOU DID." : hunt.bossFaltering ? "ONE LAST SWAT." : "NOW SHE'S ANGRY."
-      visible: hunt.bossEntering || hunt.enrageTime > 0 || hunt.bossFaltering || hunt.bossDying
-      color: hunt.bossEnraged ? "#ffad83" : "#dddddd"
-      font.pixelSize: 13; font.letterSpacing: 2
-      style: Text.Outline; styleColor: "#111111"
-    }
-    Rectangle {
-      width: parent.width; height: 18; radius: 5
-      color: "#dd141414"; border.color: "#bbffffff"; border.width: 1
-      Rectangle {
-        x: 3; y: 3; height: 12; radius: 3
-        width: (parent.width - 6) * hunt.bossHealth / hunt.bossMaxHealth
-        color: hunt.bossEnraged ? "#e75c48" : hunt.arena.accent
-        Behavior on width { NumberAnimation { duration: 70 } }
+    anchors.fill: parent
+    z: 50
+    visible: hunt.finished
+    Repeater {
+      id: confetti
+      model: 90
+      delegate: Rectangle {
+        id: piece
+        property bool active: false
+        property real vx: 0
+        property real vy: 0
+        property real spin: 0
+        property real age: 0
+        visible: active
+        width: 7 + index % 5; height: 4 + index % 3
+        color: [hunt.ui.accent, hunt.ui.foreground, hunt.ui.urgent, hunt.ui.muted][Math.floor(index / 2) % 4]
+        opacity: Math.max(0, Math.min(1, (3.2 - age) / 0.6))
+        function start() {
+          // Two cannons in the lower corners, aimed up and inward.
+          var left = index % 2 === 0
+          x = left ? -10 : hunt.width + 10; y = hunt.height * 0.9
+          var heading = (left ? -60 : -120) * Math.PI / 180 + (Math.random() - 0.5) * 0.6
+          var speed = 700 + Math.random() * 650
+          vx = Math.cos(heading) * speed; vy = Math.sin(heading) * speed
+          spin = (Math.random() - 0.5) * 900; rotation = Math.random() * 360; age = 0
+          active = true
+        }
+        function advance(dt) {
+          age += dt
+          if (age >= 3.2 || y > hunt.height + 40) { active = false; return }
+          x += vx * dt; y += vy * dt
+          vx *= Math.exp(-dt * 1.4); vy = vy * Math.exp(-dt * 1.4) + 700 * dt
+          rotation += spin * dt
+        }
       }
     }
-    Text {
-      anchors.horizontalCenter: parent.horizontalCenter
-      text: hunt.bossHealth + " / " + hunt.bossMaxHealth
-      color: "white"; font.pixelSize: 14
-      style: Text.Outline; styleColor: "#111111"
+    FrameAnimation {
+      running: hunt.finished && hunt.confettiFlying
+      onTriggered: {
+        var dt = Math.min(frameTime, 0.05), any = false
+        for (var i = 0; i < confetti.count; i++) {
+          var piece = confetti.itemAt(i)
+          if (piece.active) { piece.advance(dt); any = true }
+        }
+        if (!any) hunt.confettiFlying = false
+      }
     }
   }
+
+  // Last ten seconds: a callout at 10, then every second the timer pops, the
+  // clock ticks, and the red edge glow pulses a little stronger. The final
+  // three seconds tick twice as fast on a higher tick.
+  onSecondsLeftChanged: {
+    if (countingDown || finished || secondsLeft < 1 || secondsLeft > 10) return
+    var last = secondsLeft <= 3
+    var tick = last ? finalTick : clockTick
+    tick.stop(); tick.play()
+    if (last) halfTick.restart()
+    timePop.restart()
+    edgeGlow.base = (11 - secondsLeft) / 10
+    finalPulse.restart()
+    if (secondsLeft === 10) finalCallout.show()
+  }
+  Timer { id: halfTick; interval: 500; onTriggered: if (!hunt.finished) { finalTick.stop(); finalTick.play() } }
+  RemoteSound { id: clockTick; audio: hunt.arena.audio; source: Qt.resolvedUrl("sounds/clock-tick.wav"); volume: 0.55 }
+  RemoteSound { id: finalTick; audio: hunt.arena.audio; source: Qt.resolvedUrl("sounds/clock-tick-final.wav"); volume: 0.6 }
+
+  Item {
+    id: edgeGlow
+    anchors.fill: parent
+    z: 1
+    // base climbs from 0.1 at ten seconds to 1 at the last; pulse flares on each tick.
+    property real base: 0
+    property real pulse: 0
+    visible: !hunt.finished && !hunt.countingDown && hunt.secondsLeft <= 10 && opacity > 0
+    opacity: Math.min(1, 0.25 + 0.45 * base + 0.4 * pulse)
+    readonly property real depth: 90 + 70 * base
+    readonly property color glow: hunt.ui.tint(hunt.ui.urgent, 0.55)
+    readonly property color clear: hunt.ui.tint(hunt.ui.urgent, 0)
+    Rectangle { anchors { left: parent.left; right: parent.right; top: parent.top } height: edgeGlow.depth
+      gradient: Gradient { GradientStop { position: 0; color: edgeGlow.glow } GradientStop { position: 1; color: edgeGlow.clear } } }
+    Rectangle { anchors { left: parent.left; right: parent.right; bottom: parent.bottom } height: edgeGlow.depth
+      gradient: Gradient { GradientStop { position: 0; color: edgeGlow.clear } GradientStop { position: 1; color: edgeGlow.glow } } }
+    Rectangle { anchors { top: parent.top; bottom: parent.bottom; left: parent.left } width: edgeGlow.depth
+      gradient: Gradient { orientation: Gradient.Horizontal; GradientStop { position: 0; color: edgeGlow.glow } GradientStop { position: 1; color: edgeGlow.clear } } }
+    Rectangle { anchors { top: parent.top; bottom: parent.bottom; right: parent.right } width: edgeGlow.depth
+      gradient: Gradient { orientation: Gradient.Horizontal; GradientStop { position: 0; color: edgeGlow.clear } GradientStop { position: 1; color: edgeGlow.glow } } }
+  }
+  NumberAnimation { id: finalPulse; target: edgeGlow; property: "pulse"; from: 1; to: 0; duration: 650; easing.type: Easing.OutCubic }
+
   Text {
-    anchors.bottom: parent.bottom; anchors.bottomMargin: 48
+    id: finalCallout
     anchors.horizontalCenter: parent.horizontalCenter
-    visible: !hunt.bossTriggered
-    text: "FLIES  " + hunt.kills + " / 20"
-    color: "white"; font.pixelSize: 18; font.bold: true
-    style: Text.Outline; styleColor: "#111111"
+    y: parent.height * 0.3
+    z: 7
+    opacity: 0
+    text: "10 SECONDS!"
+    color: hunt.ui.urgent
+    style: Text.Outline; styleColor: hunt.ui.tint(hunt.ui.background, 0.85)
+    font.family: hunt.ui.fontFamily; font.pixelSize: 56; font.bold: true
+    function show() { finalCalloutPop.restart() }
+    SequentialAnimation {
+      id: finalCalloutPop
+      PropertyAction { target: finalCallout; property: "opacity"; value: 1 }
+      NumberAnimation { target: finalCallout; property: "scale"; from: 0.5; to: 1.2; duration: 110; easing.type: Easing.OutQuad }
+      NumberAnimation { target: finalCallout; property: "scale"; to: 1; duration: 180 }
+      PauseAnimation { duration: 700 }
+      NumberAnimation { target: finalCallout; property: "opacity"; to: 0; duration: 400 }
+    }
   }
-  Canvas {
-    id: bossSplat
-    width: 360; height: 360
-    visible: hunt.defeatTime > 0
-    opacity: Math.min(1, hunt.defeatTime)
-    readonly property color ink: hunt.arena.accent
-    onInkChanged: if (visible) requestPaint()
-    onPaint: {
-      var c = getContext("2d"); c.reset(); c.clearRect(0, 0, width, height)
-      c.fillStyle = ink
-      c.beginPath(); c.arc(180, 180, 65, 0, Math.PI * 2); c.fill()
-      for (var i = 0; i < 18; i++) {
-        var angle = i * 2.399, distance = 55 + (i % 5) * 22
-        c.beginPath(); c.arc(180 + Math.cos(angle) * distance, 180 + Math.sin(angle) * distance, 9 + (i % 4) * 8, 0, Math.PI * 2); c.fill()
+
+  // The briefing: the goal, how scoring works, and the score to beat.
+  Rectangle {
+    id: briefingCard
+    visible: hunt.briefing
+    z: 8
+    anchors.centerIn: parent
+    width: Math.min(660, parent.width - 32); height: briefingColumn.implicitHeight + 56
+    radius: hunt.ui.cornerRadius
+    color: hunt.ui.tint(hunt.ui.background, 0.94)
+    border.width: 2; border.color: hunt.ui.accent
+    Column {
+      id: briefingColumn
+      anchors.centerIn: parent
+      width: parent.width - 56; spacing: 14
+      Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: "FLY HUNT"; color: hunt.ui.accent; font.family: hunt.ui.fontFamily; font.pixelSize: 34; font.bold: true; font.letterSpacing: 2 }
+      Text {
+        readonly property var best: hunt.arena.flyRecords.bests[hunt.weapon]
+        readonly property string weaponName: hunt.arena.weaponName || hunt.arena.weaponNames([hunt.weapon])
+        width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap
+        textFormat: Text.StyledText
+        text: best ? "Your current best with the " + weaponName + " is <b><font color=\"" + hunt.ui.accent + "\">" + best.score + "</font></b>"
+          : "No best score with the " + weaponName + " yet"
+        color: hunt.ui.foreground; font.family: hunt.ui.fontFamily; font.pixelSize: 16
       }
+      Rectangle { width: parent.width; height: 1; color: hunt.ui.tint(hunt.ui.foreground, 0.14) }
+      Repeater {
+        model: [
+          "Kill as many flies as you can in " + Rules.roundSeconds + " seconds",
+          "Quick kills in a row multiply points, up to ×5"
+        ]
+        delegate: Row {
+          required property string modelData
+          width: briefingColumn.width; spacing: 10
+          Text { text: "›"; color: hunt.ui.accent; font.family: hunt.ui.fontFamily; font.pixelSize: 17; font.bold: true }
+          Text { width: parent.width - 22; wrapMode: Text.WordWrap; text: modelData; color: hunt.ui.foreground; font.family: hunt.ui.fontFamily; font.pixelSize: 16 }
+        }
+      }
+      Rectangle { width: parent.width; height: 1; color: hunt.ui.tint(hunt.ui.foreground, 0.14) }
+      Text {
+        id: startPrompt
+        width: parent.width; horizontalAlignment: Text.AlignHCenter
+        text: "LEFT-CLICK TO START"
+        color: hunt.ui.accent; font.family: hunt.ui.fontFamily; font.pixelSize: 22; font.bold: true; font.letterSpacing: 1.5
+        SequentialAnimation on opacity {
+          running: hunt.briefing; loops: Animation.Infinite
+          NumberAnimation { to: 0.35; duration: 650; easing.type: Easing.InOutSine }
+          NumberAnimation { to: 1; duration: 650; easing.type: Easing.InOutSine }
+        }
+      }
+      Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: "Esc quits"; color: hunt.ui.muted; font.family: hunt.ui.fontFamily; font.pixelSize: 13 }
     }
   }
 }

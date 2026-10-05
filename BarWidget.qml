@@ -37,7 +37,7 @@ BarWidget {
   Binding {
     target: arenaLoader.item
     property: "audioPreviewActive"
-    value: root.opened
+    value: root.opened || audioWarmup.hovered
     when: !!arenaLoader.item
   }
 
@@ -69,6 +69,7 @@ BarWidget {
 
   BarIconButton {
     id: button
+    HoverHandler { id: audioWarmup }
     anchors.fill: parent
     bar: root.bar
     text: "󰜃"
