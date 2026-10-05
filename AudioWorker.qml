@@ -48,10 +48,20 @@ Scope {
     path: Quickshell.env('STEAM_AUDIO_SOCKET')
     connected: true
     onConnectionStateChanged: {
-      if (connected) root.reply({event: 'ready'})
+      if (connected) { keepAwake.play(); root.reply({event: 'ready'}) }
       else Qt.quit()
     }
     parser: SplitParser { onRead: line => root.receive(line) }
+  }
+  // Digital silence on a loop for as long as the worker runs. Many USB DACs and
+  // amps stay muted for up to a second when a stream starts on a sleeping output,
+  // which swallowed the first hover sound; this wakes the output when the case
+  // is about to open and keeps it awake. Volume must stay above 0 (see audible()).
+  SoundEffect {
+    id: keepAwake
+    source: Qt.resolvedUrl('sounds/silence.wav')
+    loops: SoundEffect.Infinite
+    volume: 1
   }
   Component {
     id: effectVoice

@@ -8,6 +8,8 @@ in it keep their relative loudness:
   clock-tick.wav         last-ten-seconds ticks from 10 down to 4
   clock-tick-final.wav   the urgent ticks for the last three seconds
   new-best-fanfare.wav   a rising arpeggio into a held chord for a new best
+  silence.wav            half a second of digital silence; the audio worker loops
+                         it to keep the output device awake while it runs
 
 Tones are a few soft square-ish harmonics; ticks are a noise click into two
 damped resonances, like a wooden clock.
@@ -94,3 +96,6 @@ write({
     'clock-tick-final.wav': tick(6, [(2600, 1, .024), (4100, .5, .012), (1300, .35, .03)], .12, .8),
 })
 write({'new-best-fanfare.wav': fanfare()})
+with wave.open(str(SOUNDS / 'silence.wav'), 'wb') as output:
+    output.setparams((1, 2, RATE, 0, 'NONE', 'not compressed'))
+    output.writeframes(b'\0\0' * (RATE // 2))
