@@ -1,5 +1,6 @@
-// Convex-polygon helpers for lightsaber cuts in desktop destruction.
-// Polygons are arrays of {x, y} in either winding; cuts keep them convex.
+// Polygon helpers for lightsaber cuts in desktop destruction.
+// A window is an outline polygon plus holes ("loops": [outline, hole, ...]);
+// points are {x, y}, any winding, and shapes may be concave after cuts.
 function rect(x, y, width, height) {
   return [{x: x, y: y}, {x: x + width, y: y}, {x: x + width, y: y + height}, {x: x, y: y + height}]
 }
@@ -19,63 +20,92 @@ function bounds(poly) {
   }
   return {x: left, y: top, width: right - left, height: bottom - top}
 }
-function winding(poly) {
-  var sum = 0
-  for (var i = 0; i < poly.length; i++) {
-    var a = poly[i], b = poly[(i + 1) % poly.length]
-    sum += a.x * b.y - b.x * a.y
-  }
-  return sum < 0 ? -1 : 1
-}
+// Even–odd point test; works for concave shapes.
 function contains(poly, x, y) {
-  var sign = winding(poly)
-  for (var i = 0; i < poly.length; i++) {
-    var a = poly[i], b = poly[(i + 1) % poly.length]
-    if (((b.x - a.x) * (y - a.y) - (b.y - a.y) * (x - a.x)) * sign < 0) return false
+  var inside = false
+  for (var i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    var a = poly[i], b = poly[j]
+    if ((a.y > y) !== (b.y > y) && x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x) inside = !inside
   }
+  return inside
+}
+// Inside the outline and not in any hole.
+function solid(loops, x, y) {
+  if (!contains(loops[0], x, y)) return false
+  for (var i = 1; i < loops.length; i++) if (contains(loops[i], x, y)) return false
   return true
 }
-// Cyrus–Beck: the part of origin + t·direction inside the polygon, as
-// {enter, exit} parameters, or null when the line misses it.
-function clipLine(poly, ox, oy, dx, dy, tMin, tMax) {
-  var enter = tMin, exit = tMax, sign = winding(poly)
-  for (var i = 0; i < poly.length; i++) {
-    var a = poly[i], b = poly[(i + 1) % poly.length]
-    // Inward-facing edge normal.
-    var nx = -(b.y - a.y) * sign, ny = (b.x - a.x) * sign
-    var denominator = nx * dx + ny * dy
-    var numerator = nx * (ox - a.x) + ny * (oy - a.y)
-    if (Math.abs(denominator) < 1e-9) {
-      if (numerator < 0) return null
-      continue
-    }
-    var t = -numerator / denominator
-    if (denominator > 0) enter = Math.max(enter, t)
-    else exit = Math.min(exit, t)
-    if (enter > exit) return null
-  }
-  return {enter: enter, exit: exit}
+// Where p + t·(q − p) crosses edge a → b: {t, u} with u ∈ [0, 1) along the edge.
+function cross(p, q, a, b) {
+  var rx = q.x - p.x, ry = q.y - p.y, sx = b.x - a.x, sy = b.y - a.y
+  var denominator = rx * sy - ry * sx
+  if (Math.abs(denominator) < 1e-12) return null
+  var t = ((a.x - p.x) * sy - (a.y - p.y) * sx) / denominator
+  var u = ((a.x - p.x) * ry - (a.y - p.y) * rx) / denominator
+  // Half-open edges, so a line through a shared corner counts it once.
+  if (u < 0 || u >= 1) return null
+  return {t: t, u: u}
 }
-// Splits along the infinite line through p and q; returns [left, right], with
-// an empty array for a side the line does not reach.
-function split(poly, p, q) {
-  var left = [], right = []
-  var dx = q.x - p.x, dy = q.y - p.y
-  function side(v) { return dx * (v.y - p.y) - dy * (v.x - p.x) }
-  for (var i = 0; i < poly.length; i++) {
-    var a = poly[i], b = poly[(i + 1) % poly.length]
-    var sa = side(a), sb = side(b)
-    if (sa >= 0) left.push(a)
-    if (sa <= 0) right.push(a)
-    if ((sa > 0 && sb < 0) || (sa < 0 && sb > 0)) {
-      var t = sa / (sa - sb)
-      var crossing = {x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t}
-      left.push(crossing); right.push(crossing)
+// Every boundary crossing of the line p → q with t in [tMin, tMax], in order.
+function crossings(loops, p, q, tMin, tMax) {
+  var found = []
+  for (var l = 0; l < loops.length; l++) {
+    var loop = loops[l]
+    for (var e = 0; e < loop.length; e++) {
+      var hit = cross(p, q, loop[e], loop[(e + 1) % loop.length])
+      if (hit && hit.t >= tMin && hit.t <= tMax)
+        found.push({t: hit.t, u: hit.u, loop: l, edge: e, x: p.x + (q.x - p.x) * hit.t, y: p.y + (q.y - p.y) * hit.t})
     }
   }
-  return [left.length >= 3 ? left : [], right.length >= 3 ? right : []]
+  return found.sort(function(a, b) { return a.t - b.t })
 }
-function copy(poly) { return poly.map(function(v) { return {x: v.x, y: v.y} }) }
+// Solid stretches along an infinite line, as [enter, exit] pairs of t.
+function spans(loops, p, q) {
+  var hits = crossings(loops, p, q, -Infinity, Infinity), result = []
+  for (var i = 0; i + 1 < hits.length; i += 2) result.push([hits[i].t, hits[i + 1].t])
+  return result
+}
+// Splits an outline along a cut path that enters at one edge and leaves at
+// another (entry/exit: {edge, u}); path runs from the entry to the exit point.
+// Returns both sides; together they cover the outline.
+function splitAlong(outline, path, entry, exit) {
+  var n = outline.length
+  var ahead = [], behind = []
+  // Ahead: from the exit, forward around the outline back to the entry.
+  if (!(entry.edge === exit.edge && entry.u > exit.u)) {
+    var i = exit.edge
+    do { i = (i + 1) % n; ahead.push(outline[i]) } while (i !== entry.edge)
+  }
+  // Behind: from the exit, backward around the outline back to the entry.
+  if (!(entry.edge === exit.edge && entry.u < exit.u)) {
+    var k = exit.edge
+    behind.push(outline[k])
+    while (k !== (entry.edge + 1) % n) { k = (k - 1 + n) % n; behind.push(outline[k]) }
+  }
+  return [path.concat(ahead), path.concat(behind)]
+}
+// Where a path's newest segment closes a loop, as {index, x, y}: the loop
+// runs from that point through path[index + 1 …]. It closes by crossing an
+// earlier segment, or by coming back within `snap` px of an earlier point that
+// is at least `travel` px back along the path (a spin ends where it started).
+function selfCrossing(path, snap, travel) {
+  var n = path.length
+  if (n < 4) return null
+  var p = path[n - 2], q = path[n - 1]
+  for (var i = 0; i < n - 3; i++) {
+    var hit = cross(p, q, path[i], path[i + 1])
+    if (hit && hit.t >= -1e-9 && hit.t <= 1 + 1e-9)
+      return {index: i, x: p.x + (q.x - p.x) * hit.t, y: p.y + (q.y - p.y) * hit.t}
+  }
+  if (!snap) return null
+  var along = 0
+  for (var k = n - 2; k >= 0; k--) {
+    along += Math.hypot(path[k + 1].x - path[k].x, path[k + 1].y - path[k].y)
+    if (along >= travel && Math.hypot(q.x - path[k].x, q.y - path[k].y) <= snap)
+      return {index: k, x: path[k].x, y: path[k].y}
+  }
+  return null
+}
 function translate(poly, dx, dy) { return poly.map(function(v) { return {x: v.x + dx, y: v.y + dy} }) }
 function path(c, poly, dx, dy) {
   c.beginPath()

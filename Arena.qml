@@ -238,36 +238,104 @@ Item {
     if (Math.abs(sound.volume - volume) > 0.01 || (volume === 0 && sound.volume !== 0)) sound.volume = volume
   }
   // Lightsaber cuts in desktop destruction. The blade tip is the cutting edge:
-  // where it travels inside a window it burns a groove (a thin slit, a charred
-  // rim, and a glowing edge that cools), and when it enters a window through
-  // one edge and leaves through another, the window is cut along that line and
-  // the smaller piece falls. The rest stays up and can be cut again.
+  // wherever it travels through a window it burns a groove (a thin slit, a
+  // charred rim, and a glowing edge that cools). Anything the cuts free from
+  // the rest of the window falls: a closed loop drops out as a hole (a spin
+  // carves a circle), and a cut that enters and leaves through the window's
+  // edge drops the smaller side. What remains stays up and can be cut again.
   property var saberStrokes: ({})
   property var saberHeat: []
   property real saberContact: 0
   readonly property real saberHeatLife: 1.5
+  function regionLoops(region) { return [region.poly].concat(region.holes) }
   function saberCutDesktop(previous, blade) {
-    var a = previous.tip, dx = blade.tip.x - a.x, dy = blade.tip.y - a.y
-    var contact = null, severed = false
+    var p = previous.tip, q = blade.tip
+    var contact = null, changed = false
     var regions = destructibles
     for (var i = 0; i < regions.length; i++) {
       var region = regions[i]
       if (region.destroyed) { delete saberStrokes[region.id]; continue }
-      var span = Cut.clipLine(region.poly, a.x, a.y, dx, dy, 0, 1)
-      if (!span) { delete saberStrokes[region.id]; continue }
-      var entry = {x: a.x + dx * span.enter, y: a.y + dy * span.enter}
-      var exit = {x: a.x + dx * span.exit, y: a.y + dy * span.exit}
-      contact = exit
-      // A tip that ignites or starts inside a window can only groove it.
-      var stroke = span.enter > 0 ? {entry: entry} : (saberStrokes[region.id] || {entry: null})
-      burnGroove(region, entry, exit)
-      if (span.exit < 1) {
-        delete saberStrokes[region.id]
-        if (stroke.entry && severRegion(region, stroke.entry, exit)) severed = true
-      } else saberStrokes[region.id] = stroke
+      var loops = regionLoops(region)
+      var inside = Cut.solid(loops, p.x, p.y)
+      // A tip already inside (lit there, or a hole opened under it) only grooves until it leaves.
+      var stroke = inside ? (saberStrokes[region.id] || {entry: null, path: [{x: p.x, y: p.y}]}) : null
+      var cursor = {x: p.x, y: p.y}
+      var hits = Cut.crossings(loops, p, q, 0, 1)
+      var cut = false
+      for (var h = 0; h < hits.length && !cut; h++) {
+        var point = {x: hits[h].x, y: hits[h].y}
+        if (inside) {
+          burnGroove(region, cursor, point); contact = point
+          stroke.path.push(point)
+          cut = cutAcross(region, stroke, hits[h])
+          stroke = null; inside = false
+        } else {
+          stroke = {entry: {loop: hits[h].loop, edge: hits[h].edge, u: hits[h].u}, path: [point]}
+          inside = true
+        }
+        cursor = point
+      }
+      if (cut) { changed = true; delete saberStrokes[region.id]; continue }
+      if (!inside) { delete saberStrokes[region.id]; continue }
+      burnGroove(region, cursor, q); contact = {x: q.x, y: q.y}
+      if (extendStroke(region, stroke, {x: q.x, y: q.y})) changed = true
+      saberStrokes[region.id] = stroke
     }
-    if (severed) destructibles = destructibles.slice()
+    if (changed) destructibles = destructibles.slice()
     return contact
+  }
+  // Adds the tip's new position to a stroke; a stroke that crosses itself
+  // has closed a loop, which drops out of the window as a hole.
+  function extendStroke(region, stroke, point) {
+    var path = stroke.path, last = path[path.length - 1]
+    if (Math.hypot(point.x - last.x, point.y - last.y) < 2) return false
+    path.push(point)
+    // Very long strokes forget their start; an edge-to-edge cut then needs a fresh entry.
+    if (path.length > 900) { stroke.path = path = path.slice(path.length - 600); stroke.entry = null }
+    var crossing = Cut.selfCrossing(path, 8, 50)
+    if (!crossing) return false
+    var corner = {x: crossing.x, y: crossing.y}
+    var loop = [corner].concat(path.slice(crossing.index + 1, path.length - 1))
+    stroke.path = path.slice(0, crossing.index + 1).concat([corner, point])
+    return cutHole(region, loop)
+  }
+  function cutHole(region, loop) {
+    if (Cut.area(loop) < 300) return false
+    // Holes inside the new one fall out with it.
+    region.holes = region.holes.filter(function(hole) { return !Cut.contains(loop, hole[0].x, hole[0].y) })
+    dropPiece(region, loop, 0, (Math.random() < 0.5 ? -1 : 1) * (8 + Math.random() * 14),
+              loop.concat([loop[0]]), false)
+    region.holes = region.holes.concat([loop])
+    finishCut(region, loop)
+    return true
+  }
+  // A stroke that entered through the window's outline and leaves through it
+  // again splits the window; the smaller side falls, drifting away from the cut.
+  function cutAcross(region, stroke, exit) {
+    if (!stroke.entry || stroke.entry.loop !== 0 || exit.loop !== 0 || stroke.path.length < 2) return false
+    var halves = Cut.splitAlong(region.poly, stroke.path, stroke.entry, {edge: exit.edge, u: exit.u})
+    var areas = [Cut.area(halves[0]), Cut.area(halves[1])]
+    if (Math.min(areas[0], areas[1]) < 150) return false
+    var piece = halves[areas[0] < areas[1] ? 0 : 1], keep = halves[areas[0] < areas[1] ? 1 : 0]
+    var pieceBox = Cut.bounds(piece), keepBox = Cut.bounds(keep)
+    var away = pieceBox.x + pieceBox.width / 2 >= keepBox.x + keepBox.width / 2 ? 1 : -1
+    dropPiece(region, piece, away * (60 + Math.random() * 90), away * (14 + Math.random() * 22), stroke.path, false)
+    region.poly = keep
+    region.holes = region.holes.filter(function(hole) { return Cut.contains(keep, hole[0].x, hole[0].y) })
+    finishCut(region, piece)
+    return true
+  }
+  function finishCut(region, piece) {
+    var box = Cut.bounds(piece)
+    addRegionMark({ type: "cut", regionId: region.id, points: piece,
+      x: box.x + box.width / 2, y: box.y + box.height / 2, radius: Math.hypot(box.width, box.height) / 2 + 2,
+      clipX: region.x, clipY: region.y, clipWidth: region.width, clipHeight: region.height })
+    if (terrainCanvasLoader.item) terrainCanvasLoader.item.applyDamage(Qt.rect(box.x, box.y, box.width, box.height))
+    saberCutSound.stop(); saberCutSound.play()
+    // Too little left to stand on its own: the rest falls too.
+    var solidArea = Cut.area(region.poly)
+    for (var i = 0; i < region.holes.length; i++) solidArea -= Cut.area(region.holes[i])
+    if (solidArea < 2500) destroyRegion(region, true)
   }
   function addRegionMark(mark) {
     carveMarks.push(mark)
@@ -276,13 +344,13 @@ Item {
   function burnGroove(region, p, q) {
     var length = Math.hypot(q.x - p.x, q.y - p.y)
     if (length < 0.75) return
-    var clip = Cut.copy(region.poly)
     var centreX = (p.x + q.x) / 2, centreY = (p.y + q.y) / 2
     // A charred halo, a dim ember rim, then the slit through the window on top.
     var widths = [{type: "scorch", width: 9}, {type: "ember", width: 4.5}, {type: "slit", width: 2.5}]
     for (var i = 0; i < widths.length; i++) {
+      // Outlines are replaced, never edited, so marks can share them.
       addRegionMark({ type: widths[i].type, regionId: region.id, width: widths[i].width,
-        x0: p.x, y0: p.y, x1: q.x, y1: q.y, clipPoly: clip,
+        x0: p.x, y0: p.y, x1: q.x, y1: q.y, clipPoly: region.poly,
         x: centreX, y: centreY, radius: length / 2 + widths[i].width,
         clipX: region.x, clipY: region.y, clipWidth: region.width, clipHeight: region.height })
     }
@@ -295,34 +363,6 @@ Item {
     var heat = saberHeat.length >= 96 ? saberHeat.slice(saberHeat.length - 95) : saberHeat.slice()
     heat.push({x0: p.x, y0: p.y, x1: q.x, y1: q.y, age: 0})
     saberHeat = heat
-  }
-  function severRegion(region, p, q) {
-    if (Math.hypot(q.x - p.x, q.y - p.y) < 12) return false
-    var halves = Cut.split(region.poly, p, q)
-    if (!halves[0].length || !halves[1].length) return false
-    var areas = [Cut.area(halves[0]), Cut.area(halves[1])]
-    if (Math.min(areas[0], areas[1]) < 150) return false
-    var fall = areas[0] < areas[1] ? 0 : 1
-    var piece = halves[fall], keep = halves[1 - fall]
-    var box = Cut.bounds(piece)
-    // The piece drifts away from the cut and tips over as it falls.
-    var centre = {x: box.x + box.width / 2, y: box.y + box.height / 2}
-    var normalX = -(q.y - p.y), normalY = q.x - p.x
-    var away = (centre.x - p.x) * normalX + (centre.y - p.y) * normalY >= 0 ? 1 : -1
-    var normalLength = Math.max(0.001, Math.hypot(normalX, normalY))
-    var driftX = away * normalX / normalLength
-    dropPiece(region, piece, (60 + Math.random() * 90) * driftX, (driftX >= 0 ? 1 : -1) * (14 + Math.random() * 22),
-              [p.x - box.x, p.y - box.y, q.x - box.x, q.y - box.y], false)
-    addRegionMark({ type: "cut", regionId: region.id, points: Cut.copy(piece),
-      x: centre.x, y: centre.y, radius: Math.hypot(box.width, box.height) / 2 + 2,
-      clipX: region.x, clipY: region.y, clipWidth: region.width, clipHeight: region.height })
-    if (terrainCanvasLoader.item) terrainCanvasLoader.item.applyDamage(Qt.rect(box.x, box.y, box.width, box.height))
-    region.poly = keep
-    addHeat(p, q)
-    saberCutSound.stop(); saberCutSound.play()
-    // A sliver too small to stand on its own falls too.
-    if (Cut.area(keep) < 2500) destroyRegion(region, true)
-    return true
   }
   function saberSparks(point, swingX, swingY) {
     var sparks = []
@@ -714,7 +754,7 @@ Item {
       console.warn("Blow off some steam: could not read window geometry", error)
     }
     for (var r = 0; r < regions.length; r++)
-      regions[r].poly = Cut.rect(regions[r].x, regions[r].y, regions[r].width, regions[r].height)
+      regions[r].poly = Cut.rect(regions[r].x, regions[r].y, regions[r].width, regions[r].height), regions[r].holes = []
     destructibles = regions
     console.info("Desktop destruction prepared " + regions.length + " regions")
   }
@@ -753,7 +793,7 @@ Item {
     }
     for (var i = next.length - 1; i >= 0; i--) {
       var region = next[i]
-      if (region.destroyed || !Cut.contains(region.poly, x, y)) continue
+      if (region.destroyed || !Cut.solid(regionLoops(region), x, y)) continue
       region.hits += amount
       if (region.hits >= region.limit) destroyRegion(region)
       destructibles = next
@@ -856,32 +896,35 @@ Item {
     for (var i = 0; i < destructibles.length; i++) {
       var region = destructibles[i]
       if (region.destroyed) continue
-      // Windows the saber has cut are convex polygons, not rectangles.
-      var inside = Cut.contains(region.poly, originX, originY)
+      // Saber cuts leave concave outlines and holes, so test the actual shape.
+      var loops = regionLoops(region)
+      var inside = Cut.solid(loops, originX, originY)
       // The weapon is visually floating above the captured desktop. Do not
       // let the window underneath it catch the bullet on the way out.
       if (inside && !includeContainingRegion) continue
-      var span = Cut.clipLine(region.poly, originX, originY, directionX, directionY, -Infinity, Infinity)
-      if (!span) continue
-      var entry = span.enter
-      var exit = span.exit
-      if (entry > exit || exit <= 4) continue
-      var distance = Math.max(entry, 4.01)
-      if (nearest && distance >= nearest.distance) continue
+      var solidSpans = Cut.spans(loops, {x: originX, y: originY}, {x: originX + directionX, y: originY + directionY})
+      var distance = -1, exit = -1
+      for (var spanIndex = 0; spanIndex < solidSpans.length; spanIndex++) {
+        exit = solidSpans[spanIndex][1]
+        if (exit <= 4) continue
+        distance = Math.max(solidSpans[spanIndex][0], 4.01)
+        if (nearest && distance >= nearest.distance) break
 
-      // The rectangle only bounds the captured window. Its carved circles are
-      // empty space, so let this shot travel through them until it reaches the
-      // next intact pixel. Shooting the same line repeatedly therefore digs a
-      // progressively deeper tunnel instead of re-hitting the original edge.
-      while (distance <= exit) {
-        var carvedExit = carvedExitDistance(region.id,
-                                            originX + directionX * distance,
-                                            originY + directionY * distance,
-                                            directionX, directionY, distance)
-        if (carvedExit < 0) break
-        distance = Math.max(distance + 1, carvedExit + 0.5)
+        // Carved circles are empty space too, so let this shot travel through
+        // them until it reaches the next intact pixel. Shooting the same line
+        // repeatedly therefore digs a progressively deeper tunnel instead of
+        // re-hitting the original edge.
+        while (distance <= exit) {
+          var carvedExit = carvedExitDistance(region.id,
+                                              originX + directionX * distance,
+                                              originY + directionY * distance,
+                                              directionX, directionY, distance)
+          if (carvedExit < 0) break
+          distance = Math.max(distance + 1, carvedExit + 0.5)
+        }
+        if (distance <= exit) break
       }
-      if (distance > exit || (nearest && distance >= nearest.distance)) continue
+      if (distance < 0 || distance > exit || (nearest && distance >= nearest.distance)) continue
       nearest = {
         regionId: region.id,
         x: originX + directionX * distance,
@@ -901,17 +944,20 @@ Item {
     })
     dropPiece(region, region.poly, 0, (Math.random() < 0.5 ? -1 : 1) * 12, [], true)
   }
-  // A falling copy of part of a window: its polygon, the marks it already
-  // carries, a sideways drift and spin, and an optional glowing cut edge.
+  // A falling copy of part of a window: its outline, the marks it already
+  // carries, a sideways drift and spin, and an optional glowing cut edge (a
+  // polyline of points).
   function dropPiece(region, poly, drift, spin, edge, whole) {
     var box = Cut.bounds(poly)
+    var glow = []
+    for (var i = 0; i < edge.length; i++) glow.push(edge[i].x - box.x, edge[i].y - box.y)
     fallingPieces.append({
       pieceToken: ++fallingSerial,
       pieceRegionId: region.id,
       pieceX: box.x, pieceY: box.y,
       pieceWidth: Math.max(1, box.width), pieceHeight: Math.max(1, box.height),
       piecePoints: JSON.stringify(Cut.translate(poly, -box.x, -box.y)),
-      pieceEdge: JSON.stringify(edge),
+      pieceEdge: JSON.stringify(glow),
       pieceMarkLimit: (regionCarveMarks[region.id] || []).length,
       pieceDrift: drift, pieceSpin: spin, pieceWhole: whole,
       fallDuration: 850 + Math.random() * 450
@@ -1239,14 +1285,17 @@ Item {
             c.restore()
             // A freshly cut edge still glows.
             var edge = JSON.parse(fallingPiece.pieceEdge)
-            if (edge.length === 4) {
-              c.lineCap = "round"
-              c.strokeStyle = Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.85)
-              c.lineWidth = 5
-              c.beginPath(); c.moveTo(edge[0], edge[1]); c.lineTo(edge[2], edge[3]); c.stroke()
-              c.strokeStyle = "#fff6e0"
-              c.lineWidth = 1.6
-              c.beginPath(); c.moveTo(edge[0], edge[1]); c.lineTo(edge[2], edge[3]); c.stroke()
+            if (edge.length >= 4) {
+              c.lineCap = "round"; c.lineJoin = "round"
+              var strokes = [[Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.85), 5], ["#fff6e0", 1.6]]
+              for (var s = 0; s < strokes.length; s++) {
+                c.strokeStyle = strokes[s][0]
+                c.lineWidth = strokes[s][1]
+                c.beginPath()
+                c.moveTo(edge[0], edge[1])
+                for (var e = 2; e + 1 < edge.length; e += 2) c.lineTo(edge[e], edge[e + 1])
+                c.stroke()
+              }
             }
           }
         }
