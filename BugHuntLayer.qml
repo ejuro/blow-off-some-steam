@@ -614,17 +614,19 @@ Item {
           font.family: hunt.ui.fontFamily; font.pixelSize: 15; font.bold: hunt.personalBest
         }
         Text { width: parent.width; visible: text.length > 0; wrapMode: Text.WordWrap; text: hunt.arena.flyRecords.error; color: hunt.ui.urgent; font.family: hunt.ui.fontFamily }
+        // Hover like the weapon case: an outline and the hover sound.
         Rectangle {
           width: parent.width; height: 46; radius: hunt.ui.cornerRadius; color: againHover.containsMouse ? Qt.lighter(hunt.ui.accent, 1.12) : hunt.ui.accent
+          border.width: 2; border.color: againHover.containsMouse ? hunt.ui.foreground : hunt.ui.accent
           Text { anchors.centerIn: parent; text: "Play again"; color: hunt.ui.background; font.family: hunt.ui.fontFamily; font.pixelSize: 18; font.bold: true }
-          MouseArea { id: againHover; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: hunt.restart() }
+          MouseArea { id: againHover; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onEntered: hunt.playMenuHover(); onClicked: hunt.restart() }
         }
         Rectangle {
           width: parent.width; height: 40; radius: hunt.ui.cornerRadius
-          color: hunt.ui.tint(hunt.ui.foreground, closeHover.containsMouse ? 0.12 : 0.06)
-          border.width: 1; border.color: hunt.ui.tint(hunt.ui.foreground, 0.18)
+          color: closeHover.containsMouse ? hunt.ui.tint(hunt.ui.accent, 0.16) : hunt.ui.tint(hunt.ui.foreground, 0.06)
+          border.width: 1; border.color: closeHover.containsMouse ? hunt.ui.accent : hunt.ui.tint(hunt.ui.foreground, 0.18)
           Text { anchors.centerIn: parent; text: "Close · Esc"; color: hunt.ui.foreground; font.family: hunt.ui.fontFamily; font.pixelSize: 16 }
-          MouseArea { id: closeHover; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: hunt.arena.holster() }
+          MouseArea { id: closeHover; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onEntered: hunt.playMenuHover(); onClicked: hunt.arena.holster() }
         }
       }
     }
@@ -651,6 +653,13 @@ Item {
       }
     }
   }
+  RemoteSound {
+    id: menuHoverSound
+    audio: hunt.arena.audio
+    source: Qt.resolvedUrl("sounds/weapon-hover.wav")
+    volume: 0.22
+  }
+  function playMenuHover() { menuHoverSound.stop(); menuHoverSound.play() }
   RemoteSound {
     id: fanfare
     audio: hunt.arena.audio

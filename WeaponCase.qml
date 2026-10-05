@@ -149,6 +149,29 @@ Panel {
     }
   }
 
+  // Tabs and mode buttons hover like the weapon cards: an accent outline and the hover sound.
+  component MenuButton: Rectangle {
+    id: menuButton
+    property var ui
+    property bool selected: false
+    readonly property bool hovered: menuHover.containsMouse
+    signal clicked()
+    radius: Style.cornerRadius
+    color: selected ? Qt.rgba(ui.accent.r, ui.accent.g, ui.accent.b, 0.22)
+      : hovered ? Qt.rgba(ui.accent.r, ui.accent.g, ui.accent.b, 0.16)
+      : Qt.rgba(ui.foreground.r, ui.foreground.g, ui.foreground.b, 0.045)
+    border.width: selected ? 2 : 1
+    border.color: selected || hovered ? ui.accent : Qt.rgba(ui.foreground.r, ui.foreground.g, ui.foreground.b, 0.16)
+    MouseArea {
+      id: menuHover
+      anchors.fill: parent
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onEntered: menuButton.ui.playWeaponHover()
+      onClicked: menuButton.clicked()
+    }
+  }
+
   component SectionTitle: Text {
     property var ui
     color: Qt.rgba(ui.foreground.r, ui.foreground.g, ui.foreground.b, 0.55)
@@ -285,15 +308,14 @@ Panel {
             width: parent.width; spacing: Style.space(8)
             Repeater {
               model: ["Play", "High scores"]
-              delegate: Rectangle {
+              delegate: MenuButton {
                 required property int index
                 required property string modelData
+                ui: root
+                selected: root.recordsTab === (index === 1)
                 width: (parent.width - Style.space(8)) / 2; height: Style.space(32)
-                radius: Style.cornerRadius
-                color: root.recordsTab === (index === 1) ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.22) : "transparent"
-                border.color: root.recordsTab === (index === 1) ? root.accent : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.2)
+                onClicked: { root.recordsTab = index === 1; cabinetScroll.contentY = 0 }
                 Text { anchors.centerIn: parent; text: modelData; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
-                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: { root.recordsTab = index === 1; cabinetScroll.contentY = 0 } }
               }
             }
           }
@@ -354,27 +376,17 @@ Panel {
             columns: 2; spacing: Style.space(8)
             Repeater {
               model: root.modes
-              delegate: Rectangle {
+              delegate: MenuButton {
                 id: modeButton
                 required property var modelData
-                readonly property bool selected: root.mode === modelData.id
+                ui: root
+                selected: root.mode === modelData.id
                 width: (modeGrid.width - modeGrid.spacing) / 2; height: Style.space(42)
-                radius: Style.cornerRadius
-                color: selected ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.22)
-                  : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, modeHover.containsMouse ? 0.09 : 0.045)
-                border.width: selected ? 2 : 1
-                border.color: selected ? root.accent : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.16)
+                onClicked: if (root.arena) root.arena.setMode(modelData.id)
                 Column {
                   anchors.centerIn: parent
                   Text { anchors.horizontalCenter: parent.horizontalCenter; text: modeButton.modelData.label; color: modeButton.selected ? root.accent : root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
                   Text { anchors.horizontalCenter: parent.horizontalCenter; text: modeButton.modelData.detail; color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.5); font.family: root.fontFamily; font.pixelSize: Math.max(9, Style.font.caption - 2) }
-                }
-                MouseArea {
-                  id: modeHover
-                  anchors.fill: parent
-                  hoverEnabled: true
-                  cursorShape: Qt.PointingHandCursor
-                  onClicked: if (root.arena) root.arena.setMode(modeButton.modelData.id)
                 }
               }
             }
