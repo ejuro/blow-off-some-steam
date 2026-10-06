@@ -20,6 +20,8 @@ assert(geometry.solid([square, hole], 10, 10) && !geometry.solid([square, hole],
 const hits = geometry.crossings([square, hole], {x: -10, y: 50}, {x: 110, y: 50}, 0, 1);
 assert.deepEqual([...hits.map((h) => h.loop)], [0, 1, 1, 0]);
 assert(close(hits[1].x, 40) && close(hits[2].x, 60));
+// Each crossing knows whether it goes into the solid.
+assert.deepEqual([...hits.map((h) => h.enter)], [true, false, true, false]);
 // Solid spans skip the hole: a shot from the left passes through it.
 const spans = geometry.spans([square, hole], {x: -10, y: 50}, {x: 0, y: 50});
 assert.equal(spans.length, 2);
@@ -40,6 +42,25 @@ assert(close(sizes[0] + sizes[1], 10000) && close(sizes[0], 2000), 'same-edge cu
 [a, b] = geometry.splitAlong(square, bowl.slice().reverse(), {edge: 0, u: 0.8}, {edge: 0, u: 0.2});
 assert(close(Math.min(geometry.area(a), geometry.area(b)), 2000));
 
+// A cut from the left edge into the hole joins them: one outline, same area,
+// the hole still open, and a slit along the cut.
+const joined = geometry.bridge(square, hole, [{x: 0, y: 50}, {x: 40, y: 50}], {edge: 3, u: 0.5}, {edge: 3, u: 0.5}, false);
+assert(close(geometry.area(joined), 9600), 'joined area: ' + geometry.area(joined));
+assert(geometry.contains(joined, 10, 10) && geometry.contains(joined, 20, 60) && !geometry.contains(joined, 50, 50));
+// Down across the slit: in, out through one side, straight back in through the other, out.
+const across = geometry.crossings([joined], {x: 20, y: -10}, {x: 20, y: 110}, 0, 1);
+assert.deepEqual([...across.map((h) => h.enter)], [true, false, true, false]);
+assert(close(across[1].t, across[2].t));
+// From the hole out to the right edge now splits the window in two.
+const out = geometry.crossings([joined], {x: 50, y: 50}, {x: 110, y: 50}, 0, 1);
+assert.deepEqual([...out.map((h) => h.enter)], [true, false]);
+[a, b] = geometry.splitAlong(joined, [{x: 60, y: 50}, {x: 100, y: 50}], out[0], out[1]);
+assert(close(geometry.area(a), 4800) && close(geometry.area(b), 4800), 'split halves: ' + [geometry.area(a), geometry.area(b)]);
+// Two holes joined stay one hole covering both.
+const other = geometry.rect(70, 40, 20, 20);
+const pair = geometry.bridge(hole, other, [{x: 60, y: 50}, {x: 70, y: 50}], {edge: 1, u: 0.5}, {edge: 3, u: 0.5}, true);
+assert(close(geometry.area(pair), 800) && geometry.contains(pair, 80, 50) && geometry.contains(pair, 50, 50));
+
 // A path that crosses itself closes a loop.
 const loop = [{x: 0, y: 0}, {x: 10, y: 0}, {x: 10, y: 10}, {x: 5, y: 10}, {x: 5, y: -5}];
 const crossing = geometry.selfCrossing(loop);
@@ -53,4 +74,4 @@ assert(closed && closed.index === 0, 'spin loop closes at its start');
 assert.equal(geometry.selfCrossing([{x: 0, y: 0}, {x: 3, y: 0}, {x: 6, y: 0}, {x: 4, y: 1}], 8, 50), null, 'no snap without travel');
 const box = geometry.bounds(bowl);
 assert.deepEqual([box.x, box.y, box.width, box.height], [20, 0, 60, 40]);
-console.log('Cut geometry: concave shapes, holes, crossings, solid spans, path splits, and loops passed.');
+console.log('Cut geometry: concave shapes, holes, crossings, solid spans, path splits, joins, and loops passed.');

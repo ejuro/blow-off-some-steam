@@ -3,7 +3,8 @@ import Quickshell
 import ".." as Steam
 ShellRoot {
   Steam.Arena { id: arena }
-  function check(ok, message) { if (!ok) throw new Error(message) }
+  // A failed check reports and quits, so the runner shows why instead of timing out.
+  function check(ok, message) { if (!ok) { console.log("FAILED: " + message); Qt.quit(); throw new Error(message) } }
   function findHunt(item) {
     if (typeof item.hitSaber === "function") return item
     if (item.item) { var loaded = findHunt(item.item); if (loaded) return loaded }

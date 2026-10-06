@@ -3,11 +3,18 @@ import Quickshell
 import ".." as Steam
 ShellRoot {
   Steam.Arena { id: arena }
-  function check(ok, message) { if (!ok) throw new Error(message) }
+  // A failed check reports and quits, so the runner shows why instead of timing out.
+  function check(ok, message) { if (!ok) { console.log("FAILED: " + message); Qt.quit(); throw new Error(message) } }
   function area(poly) {
     var sum = 0
     for (var i = 0; i < poly.length; i++) { var a = poly[i], b = poly[(i + 1) % poly.length]; sum += a.x * b.y - b.x * a.y }
     return Math.abs(sum) / 2
+  }
+  function contains(poly, x, y) {
+    var inside = false
+    for (var i = 0, j = poly.length - 1; i < poly.length; j = i++)
+      if ((poly[i].y > y) !== (poly[j].y > y) && x < (poly[j].x - poly[i].x) * (y - poly[i].y) / (poly[j].y - poly[i].y) + poly[i].x) inside = !inside
+    return inside
   }
   function marks(type) { return arena.carveMarks.filter(function(m) { return m.type === type }).length }
   function sweep(points) {
@@ -20,12 +27,14 @@ ShellRoot {
     arena.audio.active = false
     arena.arm("lightsaber")
     // A frozen desktop, no real capture: a 200 × 200 window at (400, 300), a
-    // 60 × 60 one at (800, 300), and a 700 × 700 one at (1000, 150).
+    // 60 × 60 one at (800, 300), a 700 × 700 one at (1000, 150), and a
+    // 400 × 400 one at (200, 600).
     arena.captureWidth = 1920; arena.captureHeight = 1080; arena.activeWorkspaceId = -1
     arena.prepareDestructibles(JSON.stringify([
       { address: "0xw1", at: [407, 307], size: [186, 186], mapped: true, workspace: { id: 1 } },
       { address: "0xw2", at: [807, 307], size: [46, 46], mapped: true, workspace: { id: 1 } },
-      { address: "0xw3", at: [1007, 157], size: [686, 686], mapped: true, workspace: { id: 1 } }]))
+      { address: "0xw3", at: [1007, 157], size: [686, 686], mapped: true, workspace: { id: 1 } },
+      { address: "0xw4", at: [207, 607], size: [386, 386], mapped: true, workspace: { id: 1 } }]))
     arena.destructionEnabled = true
     var win = arena.destructibles[1]
     check(win.id === "0xw1" && area(win.poly) === 40000 && win.holes.length === 0, "window prepared as a shape")
@@ -52,6 +61,38 @@ ShellRoot {
     var left = arena.firstDesktopImpact(300, 425, 1, 0, false)
     check(left && Math.abs(left.x - 400) < 0.5, "the rim around the hole is still solid")
 
+    // Out of the hole and back into it: the strip between falls and the hole grows.
+    var holeArea = area(win.holes[0])
+    sweep([[475, 425], [540, 425], [540, 460], [500, 460]])
+    win = arena.destructibles[1]
+    check(win.holes.length === 1 && Math.abs(area(win.holes[0]) - holeArea - 700) < 2, "the strip joins the hole: " + (area(win.holes[0]) - holeArea))
+    hit = arena.firstDesktopImpact(480, 440, 1, 0, false)
+    check(hit && Math.abs(hit.x - 540) < 1, "shots fly through the grown hole: " + (hit && hit.x))
+
+    // Separate strokes on the 400 × 400 window (200..600, 600..1000) with a
+    // hole at 300..500 × 700..900. Edge into the hole: nothing falls yet.
+    sweep([[300, 700], [500, 700], [500, 900], [300, 900], [310, 690]])
+    var fourth = arena.destructibles[4]
+    check(fourth.id === "0xw4" && fourth.holes.length === 1, "fourth window has a hole")
+    var fourthArea = area(fourth.poly) - area(fourth.holes[0])
+    sweep([[150, 750], [400, 750]])
+    fourth = arena.destructibles[4]
+    check(fourth.holes.length === 0 && Math.abs(area(fourth.poly) - fourthArea) < 1 && !contains(fourth.poly, 400, 800),
+          "an edge-to-hole cut joins the hole to the outline")
+    // Down across the slit that cut left: the top-left corner falls where it
+    // meets the slit, and the blade carries on through to drop the strip below.
+    sweep([[250, 550], [250, 1050]])
+    fourth = arena.destructibles[4]
+    check(!contains(fourth.poly, 225, 650) && !contains(fourth.poly, 225, 900) && contains(fourth.poly, 275, 650) && contains(fourth.poly, 275, 900),
+          "crossing the slit cuts on both sides of it")
+    // Hole to the far edge: the smaller top part falls. What stands is
+    // 350 × 250 less the hole's lower part (its left side leans a little,
+    // since the loop closed at (310, 690)): 87500 − (30000 − 535.7).
+    sweep([[400, 750], [650, 750]])
+    fourth = arena.destructibles[4]
+    check(!fourth.destroyed && !contains(fourth.poly, 550, 650) && contains(fourth.poly, 550, 950) && !contains(fourth.poly, 400, 800)
+          && Math.abs(area(fourth.poly) - 58035.7) < 1, "hole-to-edge cut splits the window: " + area(fourth.poly))
+
     // A lit right-click spin carves a circle around the hilt.
     var big = arena.destructibles[3]
     arena.igniteSaber(); arena.gunPositioned = false
@@ -61,6 +102,16 @@ ShellRoot {
     check(big.holes.length === 1 && area(big.holes[0]) > 100000, "a spin drops a circle: " + big.holes.length)
     arena.trickAngle = 0
     arena.retractSaber()
+
+    // After a spin, a sweep from the edge through the hole and out the far
+    // edge still splits the window: the hole joins the outline, then the top falls.
+    var sweepPoints = []
+    for (var sx = 960; sx <= 1740; sx += 20) sweepPoints.push([sx, 420])
+    sweep(sweepPoints)
+    big = arena.destructibles[3]
+    check(!big.destroyed && big.holes.length === 0, "the hole became part of the cut: " + big.holes.length)
+    check(contains(big.poly, 1350, 800) && !contains(big.poly, 1350, 300) && !contains(big.poly, 1350, 500),
+          "the top fell, the bottom stands, and the hole stays open")
 
     // Halving the small window leaves under 2500 px² standing, so that falls too.
     sweep([[830, 250], [830, 400]])

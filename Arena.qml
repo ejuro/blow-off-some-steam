@@ -241,8 +241,11 @@ Item {
   // wherever it travels through a window it burns a groove (a thin slit, a
   // charred rim, and a glowing edge that cools). Anything the cuts free from
   // the rest of the window falls: a closed loop drops out as a hole (a spin
-  // carves a circle), and a cut that enters and leaves through the window's
-  // edge drops the smaller side. What remains stays up and can be cut again.
+  // carves a circle), a cut that enters and leaves through the window's edge
+  // drops the smaller side, and a cut that leaves a hole and comes back into
+  // it drops the strip in between. A cut from the edge into a hole (or between
+  // holes) frees nothing yet but joins them, so the next one can split across.
+  // What remains stays up and can be cut again.
   property var saberStrokes: ({})
   property var saberHeat: []
   property real saberContact: 0
@@ -261,22 +264,29 @@ Item {
       var stroke = inside ? (saberStrokes[region.id] || {entry: null, path: [{x: p.x, y: p.y}]}) : null
       var cursor = {x: p.x, y: p.y}
       var hits = Cut.crossings(loops, p, q, 0, 1)
-      var cut = false
-      for (var h = 0; h < hits.length && !cut; h++) {
-        var point = {x: hits[h].x, y: hits[h].y}
+      for (var h = 0; h < hits.length; h++) {
+        var hit = hits[h]
+        // Grazing a corner, or the far side of a slit already passed, changes nothing.
+        if (hit.enter === inside) continue
+        var point = {x: hit.x, y: hit.y}
         if (inside) {
           burnGroove(region, cursor, point); contact = point
           stroke.path.push(point)
-          cut = cutAcross(region, stroke, hits[h])
+          if (cutThrough(region, stroke, hit)) {
+            changed = true
+            if (region.destroyed) break
+            // The shape changed under the blade, so find the rest of this sweep's crossings again.
+            loops = regionLoops(region)
+            hits = Cut.crossings(loops, p, q, hit.t - 1e-9, 1); h = -1
+          }
           stroke = null; inside = false
         } else {
-          stroke = {entry: {loop: hits[h].loop, edge: hits[h].edge, u: hits[h].u}, path: [point]}
+          stroke = {entry: {ring: loops[hit.loop], edge: hit.edge, u: hit.u}, path: [point]}
           inside = true
         }
         cursor = point
       }
-      if (cut) { changed = true; delete saberStrokes[region.id]; continue }
-      if (!inside) { delete saberStrokes[region.id]; continue }
+      if (!inside || region.destroyed) { delete saberStrokes[region.id]; continue }
       burnGroove(region, cursor, q); contact = {x: q.x, y: q.y}
       if (extendStroke(region, stroke, {x: q.x, y: q.y})) changed = true
       saberStrokes[region.id] = stroke
@@ -309,20 +319,57 @@ Item {
     finishCut(region, loop)
     return true
   }
-  // A stroke that entered through the window's outline and leaves through it
-  // again splits the window; the smaller side falls, drifting away from the cut.
-  function cutAcross(region, stroke, exit) {
-    if (!stroke.entry || stroke.entry.loop !== 0 || exit.loop !== 0 || stroke.path.length < 2) return false
-    var halves = Cut.splitAlong(region.poly, stroke.path, stroke.entry, {edge: exit.edge, u: exit.u})
+  // A stroke leaving the solid through `exit`, after entering it through a
+  // boundary (outline or hole) that is still there. Returns whether the shape changed.
+  function cutThrough(region, stroke, exit) {
+    if (!stroke.entry || stroke.path.length < 2) return false
+    var from = regionLoops(region).indexOf(stroke.entry.ring)
+    if (from < 0) return false
+    if (from === 0 && exit.loop === 0) return cutAcross(region, stroke.path, stroke.entry, exit)
+    if (from === exit.loop) return cutBesideHole(region, from - 1, stroke.path, stroke.entry, exit)
+    return joinLoops(region, stroke.path, from, stroke.entry, exit.loop, exit)
+  }
+  // Edge to edge splits the window; the smaller side falls, drifting away from the cut.
+  function cutAcross(region, path, entry, exit) {
+    var halves = Cut.splitAlong(region.poly, path, entry, exit)
     var areas = [Cut.area(halves[0]), Cut.area(halves[1])]
     if (Math.min(areas[0], areas[1]) < 150) return false
     var piece = halves[areas[0] < areas[1] ? 0 : 1], keep = halves[areas[0] < areas[1] ? 1 : 0]
     var pieceBox = Cut.bounds(piece), keepBox = Cut.bounds(keep)
     var away = pieceBox.x + pieceBox.width / 2 >= keepBox.x + keepBox.width / 2 ? 1 : -1
-    dropPiece(region, piece, away * (60 + Math.random() * 90), away * (14 + Math.random() * 22), stroke.path, false)
+    dropPiece(region, piece, away * (60 + Math.random() * 90), away * (14 + Math.random() * 22), path, false)
     region.poly = keep
     region.holes = region.holes.filter(function(hole) { return Cut.contains(keep, hole[0].x, hole[0].y) })
     finishCut(region, piece)
+    return true
+  }
+  // Out of a hole and back into it: the strip between the cut and the hole's
+  // rim falls, and the hole grows to take it in.
+  function cutBesideHole(region, index, path, entry, exit) {
+    var halves = Cut.splitAlong(region.holes[index], path, entry, exit)
+    var areas = [Cut.area(halves[0]), Cut.area(halves[1])]
+    if (Math.min(areas[0], areas[1]) < 150) return false
+    var piece = halves[areas[0] < areas[1] ? 0 : 1], grown = halves[areas[0] < areas[1] ? 1 : 0]
+    // Holes inside the strip fall with it.
+    region.holes = region.holes.filter(function(hole, i) { return i !== index && !Cut.contains(grown, hole[0].x, hole[0].y) }).concat([grown])
+    dropPiece(region, piece, 0, (Math.random() < 0.5 ? -1 : 1) * (8 + Math.random() * 14), path, false)
+    finishCut(region, piece)
+    return true
+  }
+  // Outline to hole, or hole to another hole: nothing is free yet, but the two
+  // boundaries become one (with a slit along the cut).
+  function joinLoops(region, path, a, entry, b, exit) {
+    if (b < a) {
+      path = path.slice().reverse()
+      var swap = a; a = b; b = swap
+      swap = entry; entry = exit; exit = swap
+    }
+    var loops = regionLoops(region)
+    var joined = Cut.bridge(loops[a], loops[b], path, entry, exit, a > 0)
+    var holes = region.holes.filter(function(hole, i) { return i !== b - 1 })
+    if (a === 0) region.poly = joined
+    else holes[a - 1] = joined
+    region.holes = holes
     return true
   }
   function finishCut(region, piece) {

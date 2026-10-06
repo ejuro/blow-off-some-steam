@@ -4,14 +4,16 @@
 function rect(x, y, width, height) {
   return [{x: x, y: y}, {x: x + width, y: y}, {x: x + width, y: y + height}, {x: x, y: y + height}]
 }
-function area(poly) {
+// Positive or negative depending on winding.
+function signedArea(poly) {
   var sum = 0
   for (var i = 0; i < poly.length; i++) {
     var a = poly[i], b = poly[(i + 1) % poly.length]
     sum += a.x * b.y - b.x * a.y
   }
-  return Math.abs(sum) / 2
+  return sum / 2
 }
+function area(poly) { return Math.abs(signedArea(poly)) }
 function bounds(poly) {
   var left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity
   for (var i = 0; i < poly.length; i++) {
@@ -39,7 +41,8 @@ function solid(loops, x, y) {
 function cross(p, q, a, b) {
   var rx = q.x - p.x, ry = q.y - p.y, sx = b.x - a.x, sy = b.y - a.y
   var denominator = rx * sy - ry * sx
-  if (Math.abs(denominator) < 1e-12) return null
+  // Parallel, or near enough that rounding would put the hit anywhere.
+  if (Math.abs(denominator) <= 1e-9 * Math.hypot(rx, ry) * Math.hypot(sx, sy)) return null
   var t = ((a.x - p.x) * sy - (a.y - p.y) * sx) / denominator
   var u = ((a.x - p.x) * ry - (a.y - p.y) * rx) / denominator
   // Half-open edges, so a line through a shared corner counts it once.
@@ -47,17 +50,25 @@ function cross(p, q, a, b) {
   return {t: t, u: u}
 }
 // Every boundary crossing of the line p → q with t in [tMin, tMax], in order.
+// `enter` says whether p → q passes into the solid there (loop 0 is the
+// outline, the rest are holes). Joined loops have zero-width slits whose two
+// sides cross at the same point; leaving sorts first, so the line leaves the
+// solid through one side and comes back in through the other.
 function crossings(loops, p, q, tMin, tMax) {
-  var found = []
+  var found = [], rx = q.x - p.x, ry = q.y - p.y
   for (var l = 0; l < loops.length; l++) {
     var loop = loops[l]
+    // The solid lies on this side of every edge: left of it for a positive winding.
+    var side = (signedArea(loop) > 0 ? 1 : -1) * (l === 0 ? 1 : -1)
     for (var e = 0; e < loop.length; e++) {
-      var hit = cross(p, q, loop[e], loop[(e + 1) % loop.length])
+      var a = loop[e], b = loop[(e + 1) % loop.length]
+      var hit = cross(p, q, a, b)
       if (hit && hit.t >= tMin && hit.t <= tMax)
-        found.push({t: hit.t, u: hit.u, loop: l, edge: e, x: p.x + (q.x - p.x) * hit.t, y: p.y + (q.y - p.y) * hit.t})
+        found.push({t: hit.t, u: hit.u, loop: l, edge: e, x: p.x + rx * hit.t, y: p.y + ry * hit.t,
+                    enter: side * ((b.x - a.x) * ry - (b.y - a.y) * rx) > 0})
     }
   }
-  return found.sort(function(a, b) { return a.t - b.t })
+  return found.sort(function(a, b) { return Math.abs(a.t - b.t) > 1e-9 ? a.t - b.t : a.enter - b.enter })
 }
 // Solid stretches along an infinite line, as [enter, exit] pairs of t.
 function spans(loops, p, q) {
@@ -83,6 +94,18 @@ function splitAlong(outline, path, entry, exit) {
     while (k !== (entry.edge + 1) % n) { k = (k - 1 + n) % n; behind.push(outline[k]) }
   }
   return [path.concat(ahead), path.concat(behind)]
+}
+// Joins two loops with a cut path that runs from `from` on `base` to `to` on
+// `other` ({edge, u} each): the result follows base up to the path, along it,
+// all the way round other, back along the path, and on round base. That leaves
+// a zero-width slit where the path ran. An outline joined with a hole must wind
+// against it so the hole's area subtracts; two holes joined wind the same way.
+function bridge(base, other, path, from, to, sameWinding) {
+  var n = other.length
+  var forward = (signedArea(base) > 0) === (signedArea(other) > 0) ? sameWinding : !sameWinding
+  var around = []
+  for (var i = 1; i <= n; i++) around.push(other[forward ? (to.edge + i) % n : (to.edge + 1 - i + n) % n])
+  return base.slice(0, from.edge + 1).concat(path, around, path.slice().reverse(), base.slice(from.edge + 1))
 }
 // Where a path's newest segment closes a loop, as {index, x, y}: the loop
 // runs from that point through path[index + 1 …]. It closes by crossing an
