@@ -18,7 +18,7 @@ Sound effects and music run in a separate, supervised Qt process while the weapo
 
 If the audio process crashes, stops responding, or loses contact with the shell, it is terminated and the game continues without sound. Close the case and holster, then reopen to start a fresh audio session. A long suspend also invalidates the old session. The worker uses only packaged audio and a private local socket, with bounded message buffers and suppressed worker logging.
 
-This contains failures related to [issue #4](https://github.com/ejuro/blow-off-some-steam/issues/4); it is not a confirmed fix for the underlying Qt/PipeWire suspend/resume crash.
+This contains failures related to [issue #4](https://github.com/erikrjohansson/blow-off-some-steam/issues/4); it is not a confirmed fix for the underlying Qt/PipeWire suspend/resume crash.
 
 ## Desktop capture privacy
 
@@ -51,7 +51,7 @@ Desktop destruction stores its frozen frame as an owner-only temporary file unde
 ## Install
 
 ```bash
-omarchy plugin add https://github.com/ejuro/blow-off-some-steam.git --enable
+omarchy plugin add https://github.com/erikrjohansson/blow-off-some-steam.git --enable
 ```
 
 ## Remove

@@ -3,7 +3,7 @@
   "id": "io.github.ejuro.blow-off-some-steam",
   "name": "Blow off some steam",
   "version": "1.2.1",
-  "author": "ejuro",
+  "author": "erikrjohansson",
   "license": "MIT",
   "description": "Pick a cartoon weapon and safely wreck a frozen snapshot of your desktop.",
   "kinds": ["bar-widget"],

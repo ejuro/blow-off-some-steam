@@ -22,4 +22,4 @@ The downloads are marked free for use under the [Pixabay Content License](https:
 
 `weapon-spin.wav` is an original synthesized metallic spin effect generated locally for this plugin and has no third-party source dependency.
 
-`giant-wings.mp3` is the user-created soundtrack **Giant Wings**, supplied by ejuro for the Motherfly encounter. The original MP3 audio is preserved without re-encoding; embedded cover artwork and identifying metadata are omitted. It is played as compressed music, rather than preloaded as a long sound effect. The Pixabay attribution above does not apply to this track.
+`giant-wings.mp3` is the user-created soundtrack **Giant Wings**, supplied by erikrjohansson for the Motherfly encounter. The original MP3 audio is preserved without re-encoding; embedded cover artwork and identifying metadata are omitted. It is played as compressed music, rather than preloaded as a long sound effect. The Pixabay attribution above does not apply to this track.
