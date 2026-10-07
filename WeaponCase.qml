@@ -341,9 +341,12 @@ Panel {
               }
             }
           }
+          // The tagline never changes; each section says what to do in it.
           Text {
-            anchors.horizontalCenter: parent.horizontalCenter
-            text: root.recordsTab ? "Your best Fly Hunt with each weapon" : root.mode === "hunt" ? "Pick the one weapon you'll hunt with" : "Choose your harmless troublemaker"
+            width: parent.width
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.WordWrap
+            text: "Stress relief, now with\nrockets and lightsabers"
             color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.55)
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
@@ -363,6 +366,7 @@ Panel {
               }
             }
           }
+          SectionTitle { ui: root; text: "BEST FLY HUNT PER WEAPON"; visible: root.recordsTab }
           // One row per weapon; the full history stays in the records file.
           Column {
             id: highScores
@@ -435,7 +439,18 @@ Panel {
               }
             }
           }
-          SectionTitle { ui: root; text: "ARMORY"; visible: !root.recordsTab }
+          Row {
+            visible: !root.recordsTab
+            spacing: Style.space(6)
+            SectionTitle { ui: root; text: "ARMORY" }
+            Text {
+              anchors.baseline: parent.children[0].baseline
+              text: "· " + (root.mode === "hunt" ? "pick one to hunt with" : "pick your troublemaker")
+              color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.42)
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+            }
+          }
           Item {
             id: wardrobe
             visible: !root.recordsTab
