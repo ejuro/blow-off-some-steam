@@ -612,7 +612,8 @@ Item {
       function randomY() { return Math.min(hunt.height / 2, 65) + Math.random() * Math.max(0, hunt.height - 130) }
       function chooseDestination() {
         destinationX = randomX(); destinationY = randomY()
-        steeringTime = 0.7 + Math.random() * 1.5
+        // A golden fly darts: it picks a new spot two to three times as often.
+        steeringTime = golden ? 0.35 + Math.random() * 0.45 : 0.7 + Math.random() * 1.5
         speed = baseSpeed * (0.85 + Math.random() * 0.3)
       }
       function spawn() {
@@ -629,7 +630,8 @@ Item {
         golden = hunt.goldenAllowed() && Math.random() < hunt.goldenChance
         if (golden) {
           goldenAge = 0
-          baseSpeed = 520 + Math.random() * 200
+          // The fastest thing on screen (normal flies top out at 800).
+          baseSpeed = 850 + Math.random() * 200
           goldenChime.stop(); goldenChime.play()
         }
         chooseDestination()
@@ -680,7 +682,7 @@ Item {
         var dx = destinationX - x, dy = destinationY - y
         var distance = Math.sqrt(dx * dx + dy * dy)
         if (!leaving && (steeringTime <= 0 || distance < 25)) { chooseDestination(); dx = destinationX - x; dy = destinationY - y; distance = Math.sqrt(dx * dx + dy * dy) }
-        var blend = 1 - Math.exp(-dt * (index >= 2 ? 7 : 4))
+        var blend = 1 - Math.exp(-dt * (golden ? 11 : index >= 2 ? 7 : 4))
         vx += (dx / Math.max(1, distance) * speed - vx) * blend
         vy += (dy / Math.max(1, distance) * speed - vy) * blend
         x += vx * dt; y += vy * dt
