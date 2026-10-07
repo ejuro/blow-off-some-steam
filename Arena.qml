@@ -51,9 +51,9 @@ Item {
     // the AK climbs and spreads while held, the MP5 fires tight 3-round
     // bursts, and the M20's blast flings the flies it misses. kick shakes
     // the Fly Hunt play area on each shot; stopScale sizes a kill's hit-stop.
-    case "lightsaber": return { name: "Lightsaber", image: "", width: 96, height: 24, scale: 2.6, gripX: 12, gripY: 12, muzzleX: 92, muzzleY: 12, automatic: false, interval: 460, recoil: 0, particles: 0, power: 1, ejectsCase: false, kick: 0, stopScale: 1 }
+    case "lightsaber": return { name: "Lightsaber", image: "", width: 96, height: 24, scale: 2.0, gripX: 12, gripY: 12, muzzleX: 92, muzzleY: 12, automatic: false, interval: 460, recoil: 0, particles: 0, power: 1, ejectsCase: false, kick: 0, stopScale: 1 }
     case "revolver": return { name: "Colt 45", image: "assets/revolver-colt45.png", width: 64, height: 32, scale: 2.2, gripX: 20, gripY: 25, muzzleX: 47, muzzleY: 12.5, automatic: false, interval: 280, recoil: 24, particles: 25, power: 1.25, ejectsCase: false, flashStyle: "revolver", bulletSize: 5.6, pierce: true, kick: 0.24, stopScale: 1.7 }
-    case "ak47": return { name: "AK-47", image: "assets/ak47.png", width: 96, height: 48, scale: 2, gripX: 35, gripY: 33, muzzleX: 79, muzzleY: 9.5, ejectX: 45, ejectY: 12, automatic: true, interval: 82, recoil: 11, particles: 8, power: 1, flashStyle: "ak", bulletSize: 4.8, climb: true, kick: 0.05, stopScale: 1 }
+    case "ak47": return { name: "AK-47", image: "assets/ak47.png", width: 96, height: 48, scale: 2, gripX: 35, gripY: 33, muzzleX: 79, muzzleY: 9.5, ejectX: 45, ejectY: 12, automatic: true, interval: 82, recoil: 17, particles: 8, power: 1, flashStyle: "ak", bulletSize: 4.8, climb: true, kick: 0.08, stopScale: 1 }
     case "mp5a3": return { name: "MP5A3", image: "assets/mp5a3.png", width: 80, height: 48, scale: 2.1, gripX: 33, gripY: 33, muzzleX: 60, muzzleY: 7.5, ejectX: 31, ejectY: 8, automatic: false, burst: 3, burstGap: 55, interval: 300, recoil: 5, particles: 5, power: 0.9, flashStyle: "mp5", bulletSize: 3.2, kick: 0.025, stopScale: 0.7 }
     case "bazooka": return { name: "M20 Bazooka", image: "assets/bazooka-m20.png", width: 128, height: 32, scale: 2, gripX: 46, gripY: 24, muzzleX: 115, muzzleY: 12.5, automatic: false, interval: 500, recoil: 28, particles: 42, power: 1.8, fling: true, kick: 0.32, stopScale: 1.25 }
     default: return { name: "Glock P80", image: "assets/glock-p80.png", width: 64, height: 48, scale: 2.2, gripX: 22, gripY: 34, muzzleX: 48, muzzleY: 11.5, ejectX: 31, ejectY: 14, automatic: false, interval: 220, recoil: 15, particles: 19, power: 1, bulletSize: 4.2, kick: 0.06, stopScale: 0.9 }
@@ -1158,8 +1158,8 @@ Item {
     var cosA = Math.cos(angle)
     var sinA = Math.sin(angle)
     // The AK's shots stray more the longer it has been climbing.
-    var shotAngle = spec.climb ? angle + (Math.random() - 0.5) * (0.6 + recoilClimb * 0.7) * Math.PI / 180 : angle
-    if (spec.climb) recoilClimb = Math.min(16, recoilClimb + 1.5)
+    var shotAngle = spec.climb ? angle + (Math.random() - 0.5) * (0.6 + recoilClimb * 0.8) * Math.PI / 180 : angle
+    if (spec.climb) recoilClimb = Math.min(22, recoilClimb + 2.3)
     if (bugHuntEnabled && bugLayerLoader.item) bugLayerLoader.item.kick(spec.kick || 0)
     var localMuzzleX = (spec.muzzleX - spec.gripX) * spec.scale
     var localMuzzleY = (spec.muzzleY - spec.gripY) * spec.scale * (aimFlipped ? -1 : 1)

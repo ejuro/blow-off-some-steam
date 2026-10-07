@@ -99,7 +99,7 @@ ShellRoot {
     arena.gunX = 1350; arena.gunY = 500; arena.aimAngle = 0; arena.saberIgnition = 1; arena.saberPrevious = null
     for (var step = 0; step <= 36; step++) { arena.trickAngle = step * 10; arena.advanceSaber(0.016) }
     big = arena.destructibles[3]
-    check(big.holes.length === 1 && area(big.holes[0]) > 100000, "a spin drops a circle: " + big.holes.length)
+    check(big.holes.length === 1 && area(big.holes[0]) > 60000, "a spin drops a circle: " + big.holes.length + " " + (big.holes[0] ? Math.round(area(big.holes[0])) : 0))
     arena.trickAngle = 0
     arena.retractSaber()
 
