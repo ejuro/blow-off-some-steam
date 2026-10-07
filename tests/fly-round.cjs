@@ -77,6 +77,23 @@ rules.kill(golden, 0);
 rules.kill(golden, 100, true);
 assert.equal(golden.score, 100 + 600);
 assert.equal(golden.combo, 2);
+// Bullet time: a kill after the buzzer carries a live combo on and scores.
+const late = rules.fresh(0, 'glock');
+rules.kill(late, 39500); rules.kill(late, 39800);           // ×2, still alive at 40 s
+assert.equal(rules.finalKill(late, 39999), false, 'not before the buzzer');
+assert.equal(rules.finalKill(late, 43000), true);          // 3 s of real time later: the clock stopped
+assert.equal(late.combo, 3);
+assert.equal(late.score, 100 + 200 + 300);
+rules.finalKill(late, 43000, true);                         // same blast, golden
+assert.equal(late.score, 600 + 400 * 3);
+assert.equal(late.kills, 4);
+assert.equal(rules.finish(late, 44000).score, 1800);
+assert.equal(rules.finalKill(late, 44001), false, 'nothing after the round is saved');
+const cold = rules.fresh(0, 'glock');
+rules.kill(cold, 30000);                                    // ×1 window ran out long before 40 s
+rules.finalKill(cold, 40500);
+assert.equal(cold.combo, 1);
+assert.equal(cold.score, 200);
 // Medals: each weapon has its own ladder; below bronze is -1.
 assert.equal(rules.medal('glock', 3999), -1);
 assert.equal(rules.medal('glock', 4000), 0);

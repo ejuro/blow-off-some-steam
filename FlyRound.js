@@ -3,7 +3,7 @@ var weaponIds = ["glock", "revolver", "ak47", "mp5a3", "bazooka", "lightsaber"]
 var roundSeconds = 40
 function fresh(now, weapon) {
   return { deadline: now + roundSeconds * 1000, score: 0, kills: 0, combo: 0, bestCombo: 0,
-           lastKill: null, weapon: weaponIds.indexOf(weapon) >= 0 ? weapon : null, finished: false }
+           lastKill: null, finalKills: 0, weapon: weaponIds.indexOf(weapon) >= 0 ? weapon : null, finished: false }
 }
 // Time allowed after a kill to keep the combo going; it tightens at each step
 // so ×5 takes a steady stream of kills to hold.
@@ -17,6 +17,20 @@ function kill(round, now, golden) {
   round.combo = round.lastKill !== null && now - round.lastKill <= comboWindow(round.combo)
     ? Math.min(5, round.combo + 1) : 1
   round.lastKill = now
+  round.kills++
+  round.score += 100 * round.combo * (golden ? goldenValue : 1)
+  round.bestCombo = Math.max(round.bestCombo, round.combo)
+  return true
+}
+// Bullet time after the buzzer: the first kill (and the rest of the same
+// blast or sweep) still scores. The combo clock stopped at the buzzer, so
+// the combo carries on if it was still alive then.
+function finalKill(round, now, golden) {
+  if (round.finished || now < round.deadline) return false
+  var alive = round.combo > 0 && round.lastKill !== null
+    && (round.finalKills > 0 || round.deadline - round.lastKill <= comboWindow(round.combo))
+  round.combo = alive ? Math.min(5, round.combo + 1) : 1
+  round.finalKills = (round.finalKills || 0) + 1
   round.kills++
   round.score += 100 * round.combo * (golden ? goldenValue : 1)
   round.bestCombo = Math.max(round.bestCombo, round.combo)

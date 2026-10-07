@@ -19,8 +19,12 @@ with tempfile.TemporaryDirectory(prefix="steam-fly-test-") as folder:
 
     def run(source, marker):
         (base / "shell.qml").write_text(preamble + source)
-        process = subprocess.run(["/usr/bin/qs", "-p", str(base), "--no-color"], env=env,
-                                 capture_output=True, text=True, timeout=10)
+        try:
+            process = subprocess.run(["/usr/bin/qs", "-p", str(base), "--no-color"], env=env,
+                                     capture_output=True, text=True, timeout=12)
+        except subprocess.TimeoutExpired as timeout:
+            # A failed check throws inside a timer and the shell keeps running; show why.
+            raise AssertionError(str(timeout.stdout or "") + str(timeout.stderr or "")) from None
         log = process.stdout + process.stderr
         assert process.returncode == 0 and marker in log, log
         assert not any(word in log for word in ["ReferenceError", "TypeError", "Failed to load configuration"]), log
@@ -78,16 +82,22 @@ with tempfile.TemporaryDirectory(prefix="steam-fly-test-") as folder:
       Timer {
         id: expired; interval: 200
         onTriggered: {
-          check(hunt.ending && !hunt.finished && hunt.secondsLeft === 0 && hunt.timeScale < 1, "time's up slows down before the results")
-          check(records.records.length === 1, "saved as soon as time is up")
-          check(hunt.finalKill, "a kill just before the buzzer is the final kill, and the slow motion lingers on it")
+          check(hunt.lastShot && !hunt.ending && !hunt.finished && hunt.secondsLeft === 0 && hunt.timeScale < 1, "time's up turns into bullet time")
+          check(records.records.length === 0 && !hunt.finalKill && hunt.acceptHits(), "bullet time still takes shots and saves nothing yet")
+          // The combo (×5) was alive at the buzzer, so the final kill scores 500.
+          var fly = null
+          for (var f = 0; f < hunt.children.length; f++) if (typeof hunt.children[f].spawn === "function") { fly = hunt.children[f]; break }
+          fly.spawn(); fly.x = 900; fly.y = 500
+          check(hunt.hitProjectile(850, 500, 950, 500, 4), "a shot in bullet time hits")
+          check(hunt.finalKill && hunt.score === 2500 && hunt.kills === 7, "the final kill scores at the held combo: " + hunt.score)
           slowed.start()
         }
       }
       Timer {
-        id: slowed; interval: 2700
+        id: slowed; interval: 2100
         onTriggered: {
-          check(hunt.finished && !hunt.ending && hunt.timeScale === 1 && hunt.secondsLeft === 0, "timer finished the round")
+          check(hunt.finished && !hunt.ending && !hunt.lastShot && hunt.timeScale === 1 && hunt.secondsLeft === 0, "bullet time ended in the results")
+          check(records.records.length === 1, "saved when bullet time ends")
           check(Math.round(hunt.hudScore) === hunt.score, "the HUD score counted up to the total")
           check(hunt.medal === -1 && hunt.nextMedal.name === "Bronze" && hunt.nextMedal.score === 4000, "2000 with the Glock earns no medal yet")
           hunt.finishRound()
@@ -103,7 +113,7 @@ with tempfile.TemporaryDirectory(prefix="steam-fly-test-") as folder:
           check(hunt.confettiFlying, "a new best launches confetti")
           check(!hunt.hitProjectile(0, 0, 1280, 720, 1000), "late projectile rejected")
           hunt.hitBlast(640, 360, 2000)
-          check(hunt.score === 2000, "late blast rejected")
+          check(hunt.score === 2500, "late blast rejected")
           hunt.restart()
           check(!hunt.finished && hunt.score === 0 && hunt.secondsLeft === 40 && fake.clears === 1, "replay reset")
           check(hunt.round.weapon === "glock" && hunt.bestCombo === 0, "replay keeps the weapon and resets stats")
@@ -118,13 +128,48 @@ with tempfile.TemporaryDirectory(prefix="steam-fly-test-") as folder:
     saved = json.loads((base / "state/blow-off-some-steam/fly-records.json").read_text())
     assert len(saved["records"]) == 1, saved
     record = saved["records"][0]
-    assert (record["score"], record["kills"], record["bestCombo"], record["weapon"], record["weapons"], record["seconds"]) == (2000, 6, 5, "glock", ["glock"], 40), record
+    assert (record["score"], record["kills"], record["bestCombo"], record["weapon"], record["weapons"], record["seconds"]) == (2500, 7, 5, "glock", ["glock"], 40), record
     run('''ShellRoot {
       Steam.FlyRecords { id: records }
       Timer { interval: 300; running: true; onTriggered: {
-        if (!records.ready || records.records.length !== 1 || records.bests.glock.score !== 2000)
+        if (!records.ready || records.records.length !== 1 || records.bests.glock.score !== 2500)
           throw new Error("Records failed to survive restart")
         console.log("RELOAD_OK"); Qt.quit()
       } }
     }''', "RELOAD_OK")
-print("QML round timer, late hits, replay, abandoned round, and records reload passed.")
+    # No kill in bullet time: it times out into the results and still saves the round.
+    run('''ShellRoot {
+      Steam.FlyRecords { id: records }
+      Item {
+        id: fake
+        property bool armed: false
+        property var audio: null
+        property color accent: "#55ddbb"
+        property color foreground: "#e0e0e0"
+        property color background: "#101315"
+        property color muted: "#707880"
+        property color urgent: "#a55555"
+        property string fontFamily: "monospace"
+        property int cornerRadius: 0
+        property string weapon: "glock"
+        function tint(color, alpha) { return Qt.rgba(color.r, color.g, color.b, alpha) }
+        property var flyRecords: records
+        function clearRoundEffects() {}
+        function weaponNames(ids) { return ids.join(" · ") }
+        function holster() {}
+      }
+      Steam.BugHuntLayer { id: hunt; width: 1280; height: 720; arena: fake }
+      function check(ok, message) { if (!ok) throw new Error(message) }
+      Timer { interval: 250; running: true; onTriggered: {
+        hunt.startCountdown(); hunt.countingDown = false
+        hunt.recordKill(100, 100, "projectile")
+        hunt.round.deadline = Date.now() + 50
+        late.start()
+      } }
+      Timer { id: late; interval: 4900; onTriggered: {
+        check(hunt.finished && !hunt.finalKill && hunt.score === 100, "bullet time without a kill times out into the results")
+        check(records.records.length === 2, "the timed-out round is saved")
+        console.log("TIMEOUT_OK"); Qt.quit()
+      } }
+    }''', "TIMEOUT_OK")
+print("QML round timer, bullet-time final kill and timeout, late hits, replay, abandoned round, and records reload passed.")

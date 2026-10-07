@@ -89,6 +89,8 @@ Item {
     id: countdownTimer
     interval: 650; repeat: true
     onTriggered: {
+      // Cancelled (or skipped) from outside: leave the running round alone.
+      if (!hunt.countingDown) { stop(); return }
       hunt.countdownStep--
       if (hunt.countdownStep === 0) {
         hunt.round = Rules.fresh(Date.now(), hunt.weapon)
@@ -102,13 +104,24 @@ Item {
   Component.onCompleted: briefing = true
   function acceptHits() {
     if (finished || ending || countingDown || briefing) return false
-    if (Date.now() >= round.deadline) { finishRound(); return false }
+    if (!lastShot && Date.now() >= round.deadline) beginLastShot()
     return true
   }
   function recordKill(x, y, source, weapon, golden) {
     var now = Date.now()
     var before = round.score
-    if (!Rules.kill(round, now, golden)) { finishRound(); return }
+    if (!lastShot && now >= round.deadline) beginLastShot()
+    if (lastShot) {
+      if (!Rules.finalKill(round, now, golden)) return
+      // The first kill ends bullet time; the rest of the same blast or sweep still counts.
+      if (!finalKill) {
+        finalKill = true
+        lastShotLeft = 0; lastShotClock.stop()
+        finalKillMark.show(x, y)
+        timeCallout.hide()
+        lastShotClose.restart()
+      }
+    } else if (!Rules.kill(round, now, golden)) return
     lastKillTime = now; lastKillX = x; lastKillY = y
     score = round.score; kills = round.kills
     combo = round.combo; bestCombo = round.bestCombo
@@ -131,44 +144,70 @@ Item {
     popups.itemAt(popupCursor).start(x, y, points, multiplier, golden)
     popupCursor = (popupCursor + 1) % popups.count
   }
-  function finishRound() {
-    var record = Rules.finish(round, Date.now())
-    if (!record) return
+  // Time's up is bullet time: TIME!, the world slows to a crawl, and the
+  // player keeps firing until a kill (FINAL KILL!) or lastShotSeconds pass.
+  // A final kill scores at the combo held at the buzzer. The round is saved
+  // and the results shown once bullet time and its linger are over.
+  readonly property real lastShotSeconds: 4
+  property bool lastShot: false
+  property bool finalKill: false
+  // Share of the bullet-time allowance left; drives the LAST SHOT bar.
+  property real lastShotLeft: 0
+  function beginLastShot() {
+    if (lastShot || ending || finished) return
+    lastShot = true
     secondsLeft = 0
+    hitStop = 0
+    finalPulse.stop(); halfTick.stop()
+    slowmoSound.stop(); slowmoSound.play()
+    timeCallout.show()
+    slowDown.to = 0.2; slowDown.restart()
+    lastShotLeft = 1; lastShotClock.restart()
+  }
+  NumberAnimation { id: slowDown; target: hunt; property: "timeScale"; duration: 220; easing.type: Easing.OutQuad }
+  NumberAnimation {
+    id: lastShotClock
+    target: hunt; property: "lastShotLeft"; to: 0
+    duration: hunt.lastShotSeconds * 1000
+    // No kill in time: a short pause, then the results.
+    onFinished: if (hunt.lastShot && !hunt.finalKill) hunt.endLastShot(500)
+  }
+  // Lets the rest of a rocket blast or saber sweep land after the first final kill.
+  Timer { id: lastShotClose; interval: 120; onTriggered: hunt.endLastShot(1700) }
+  function endLastShot(linger) {
+    if (!lastShot) return
+    lastShot = false
+    ending = true
+    // Linger on the kill even slower.
+    slowDown.to = 0.1; slowDown.restart()
+    lingerTimer.interval = linger; lingerTimer.restart()
+  }
+  Timer { id: lingerTimer; onTriggered: hunt.finishRound() }
+  // Saves the round once; also used when it is left mid bullet time.
+  function saveRound() {
+    var record = Rules.finish(round, Math.max(Date.now(), round.deadline))
+    if (!record) return false
     previousBest = arena.flyRecords.bests[round.weapon] || null
     personalBest = record.score > 0 && (!previousBest || record.score > previousBest.score)
     var weaponId = round.weapon || weapon
     medal = Rules.medal(weaponId, record.score)
     previousMedal = previousBest ? Rules.medal(weaponId, previousBest.score) : -1
     nextMedal = Rules.nextMedal(weaponId, record.score)
-    hitStop = 0
     arena.flyRecords.add(record)
-    finalKill = lastKillTime > 0 && Date.now() - lastKillTime <= finalKillWindow
-    ending = true
-    slowMotion.restart()
+    return true
   }
-  // Shots, flies and splats slow to a crawl for a moment, the screen edges
-  // darken, and a kill in the last finalKillWindow ms gets a FINAL KILL!
-  // callout; the slow motion then lingers on it before the results.
-  readonly property int finalKillWindow: 1500
-  property bool finalKill: false
-  SequentialAnimation {
-    id: slowMotion
-    ScriptAction { script: {
-      slowmoSound.stop(); slowmoSound.play()
-      timeCallout.show()
-      if (hunt.finalKill) finalKillMark.show(hunt.lastKillX, hunt.lastKillY)
-    } }
-    NumberAnimation { target: hunt; property: "timeScale"; to: 0.12; duration: 220; easing.type: Easing.OutQuad }
-    PauseAnimation { duration: hunt.finalKill ? 2300 : 1150 }
-    ScriptAction { script: hunt.showResults() }
-  }
-  function showResults() {
-    ending = false; timeScale = 1; trauma = 0
+  function finishRound() {
+    if (!saveRound()) return
+    secondsLeft = 0
+    lastShot = false; lastShotClock.stop(); lastShotClose.stop(); lingerTimer.stop(); slowDown.stop()
+    ending = false; timeScale = 1; trauma = 0; hitStop = 0
     finished = true
     resultReveal.restart()
   }
+  Component.onDestruction: if (!finished && (lastShot || ending)) saveRound()
   function restart() {
+    // A round left in bullet time still counts.
+    if (!finished && (lastShot || ending)) saveRound()
     arena.clearRoundEffects()
     round = Rules.fresh(Date.now(), weapon)
     score = 0; kills = 0; combo = 0; bestCombo = 0
@@ -183,7 +222,8 @@ Item {
     hitStop = 0; trauma = 0
     for (var d = 0; d < droplets.count; d++) droplets.itemAt(d).active = false
     resultReveal.stop(); shownScore = 0; revealed = false
-    slowMotion.stop(); ending = false; timeScale = 1; lastKillTime = 0; finalKill = false
+    lastShotClock.stop(); lastShotClose.stop(); lingerTimer.stop(); slowDown.stop()
+    lastShot = false; lastShotLeft = 0; ending = false; timeScale = 1; lastKillTime = 0; finalKill = false
     finalKillPop.stop(); finalKillMark.opacity = 0
     medal = -1; previousMedal = -1; nextMedal = null
     medalCoin.opacity = 0; medalCoin.shine = -1
@@ -198,11 +238,12 @@ Item {
   Timer {
     interval: 50; running: !hunt.finished; repeat: true
     onTriggered: {
-      if (hunt.countingDown || hunt.ending) return
+      // The combo clock stops at the buzzer, through bullet time.
+      if (hunt.countingDown || hunt.lastShot || hunt.ending) return
       var now = Date.now()
       hunt.secondsLeft = Rules.remaining(hunt.round, now)
       if (hunt.combo > 0 && hunt.round.lastKill !== null && now - hunt.round.lastKill > Rules.comboWindow(hunt.round.combo)) hunt.breakCombo()
-      if (now >= hunt.round.deadline) hunt.finishRound()
+      if (now >= hunt.round.deadline) hunt.beginLastShot()
     }
   }
   // One preloaded voice also avoids stacking four identical sounds on a blast.
@@ -483,7 +524,7 @@ Item {
       if (hunt.hitStop > 0) { hunt.hitStop = Math.max(0, hunt.hitStop - dt); return }
       hunt.wingTime += dt
       hunt.comboLeft = hunt.combo > 0 && hunt.round.lastKill !== null
-        ? Math.max(0, 1 - (Date.now() - hunt.round.lastKill) / Rules.comboWindow(hunt.round.combo)) : 0
+        ? Math.max(0, 1 - (Math.min(Date.now(), hunt.round.deadline) - hunt.round.lastKill) / Rules.comboWindow(hunt.round.combo)) : 0
       for (var j = 0; j < fragments.count; j++) fragments.itemAt(j).advance(dt)
       for (var k = 0; k < droplets.count; k++) droplets.itemAt(k).advance(dt)
       for (var w = 0; w < wings.count; w++) wings.itemAt(w).advance(dt)
@@ -1148,7 +1189,7 @@ Item {
     // base climbs from 0.1 at ten seconds to 1 at the last; pulse flares on each tick.
     property real base: 0
     property real pulse: 0
-    visible: !hunt.finished && !hunt.ending && !hunt.countingDown && hunt.secondsLeft <= 10 && opacity > 0
+    visible: !hunt.finished && !hunt.lastShot && !hunt.ending && !hunt.countingDown && hunt.secondsLeft <= 10 && opacity > 0
     opacity: Math.min(1, 0.25 + 0.45 * base + 0.4 * pulse)
     tone: hunt.ui.urgent
     depth: 90 + 70 * base
@@ -1161,7 +1202,7 @@ Item {
     z: 4
     tone: hunt.ui.background
     depth: Math.min(width, height) * 0.28
-    opacity: hunt.ending ? Math.min(1, (1 - hunt.timeScale) * 1.4) : 0
+    opacity: hunt.lastShot || hunt.ending ? Math.min(1, (1 - hunt.timeScale) * 1.4) : 0
     visible: opacity > 0
   }
   Text {
@@ -1174,7 +1215,10 @@ Item {
     color: hunt.ui.urgent
     style: Text.Outline; styleColor: hunt.ui.tint(hunt.ui.background, 0.85)
     font.family: hunt.ui.fontFamily; font.pixelSize: 84; font.bold: true; font.letterSpacing: 4
-    function show() { timeCalloutPop.restart() }
+    function show() { timeCalloutHide.stop(); timeCalloutPop.restart() }
+    // Out of the way once the final kill lands.
+    function hide() { if (opacity > 0) { timeCalloutPop.stop(); timeCalloutHide.restart() } }
+    NumberAnimation { id: timeCalloutHide; target: timeCallout; property: "opacity"; to: 0; duration: 160 }
     SequentialAnimation {
       id: timeCalloutPop
       PropertyAction { target: timeCallout; property: "opacity"; value: 1 }
@@ -1183,7 +1227,37 @@ Item {
       NumberAnimation { target: timeCallout; property: "opacity"; to: 0; duration: 250 }
     }
   }
-  // A ring closes in on the last kill when it landed right before the buzzer.
+  // Under TIME!: one last kill still counts, and a bar shows how long bullet time lasts.
+  Column {
+    anchors.horizontalCenter: parent.horizontalCenter
+    y: timeCallout.y + timeCallout.height + 14
+    z: 7
+    spacing: 8
+    visible: hunt.lastShot && !hunt.finalKill
+    Text {
+      anchors.horizontalCenter: parent.horizontalCenter
+      text: "LAST SHOT"
+      color: hunt.ui.accent
+      style: Text.Outline; styleColor: hunt.ui.tint(hunt.ui.background, 0.85)
+      font.family: hunt.ui.fontFamily; font.pixelSize: 26; font.bold: true; font.letterSpacing: 3
+      SequentialAnimation on opacity {
+        running: hunt.lastShot; loops: Animation.Infinite
+        NumberAnimation { to: 0.45; duration: 380; easing.type: Easing.InOutSine }
+        NumberAnimation { to: 1; duration: 380; easing.type: Easing.InOutSine }
+      }
+    }
+    Rectangle {
+      anchors.horizontalCenter: parent.horizontalCenter
+      width: 180; height: 4; radius: 2
+      color: hunt.ui.tint(hunt.ui.foreground, 0.15)
+      Rectangle {
+        anchors.centerIn: parent
+        width: parent.width * hunt.lastShotLeft; height: parent.height; radius: parent.radius
+        color: hunt.ui.accent
+      }
+    }
+  }
+  // A ring closes in on the kill that ends bullet time.
   Item {
     id: finalKillMark
     z: 7
@@ -1215,7 +1289,7 @@ Item {
         NumberAnimation { target: finalKillRing; property: "scale"; from: 2.6; to: 1; duration: 260; easing.type: Easing.OutCubic }
         NumberAnimation { target: finalKillMark; property: "scale"; from: 0.6; to: 1; duration: 260; easing.type: Easing.OutBack }
       }
-      PauseAnimation { duration: 1750 }
+      PauseAnimation { duration: 1300 }
       NumberAnimation { target: finalKillMark; property: "opacity"; to: 0; duration: 250 }
     }
   }
