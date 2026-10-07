@@ -96,7 +96,7 @@ Item {
   }
   function clearRoundEffects() {
     cancelSaber()
-    automaticHoldTimer.stop(); fireTimer.stop(); burstTimer.stop(); burstLeft = 0; recoilClimb = 0; automaticHoldEngaged = false
+    automaticHoldTimer.stop(); fireTimer.stop(); burstTimer.stop(); burstCooldown.stop(); rocketCooldown.stop(); burstLeft = 0; recoilClimb = 0; automaticHoldEngaged = false
     automaticSound.stop(); mp5AutomaticSound.stop()
     pistolSound.stop(); akSingleSound.stop(); mp5SingleSound.stop()
     revolverSound.stop(); bazookaLaunchSound.stop(); rocketExplosionSound.stop()
@@ -706,7 +706,7 @@ Item {
     automaticHoldEngaged = false
     automaticHoldTimer.stop()
     fireTimer.stop()
-    burstTimer.stop(); burstLeft = 0; recoilClimb = 0
+    burstTimer.stop(); burstCooldown.stop(); rocketCooldown.stop(); burstLeft = 0; recoilClimb = 0
     automaticSound.stop()
     mp5AutomaticSound.stop()
     recoil = 0
@@ -1078,7 +1078,7 @@ Item {
     automaticHoldEngaged = false
     automaticHoldTimer.stop()
     fireTimer.stop()
-    burstTimer.stop(); burstLeft = 0; recoilClimb = 0
+    burstTimer.stop(); burstCooldown.stop(); rocketCooldown.stop(); burstLeft = 0; recoilClimb = 0
     pistolSound.stop()
     akSingleSound.stop()
     automaticSound.stop()
@@ -1995,12 +1995,18 @@ Item {
         var targetY = root.pointerY - unitY * root.followDistance
         root.gunX += (targetX - root.gunX) * followBlend
         root.gunY += (targetY - root.gunY) * followBlend
-        var rawAngle = Math.atan2(root.pointerY - root.gunY, root.pointerX - root.gunX) * 180 / Math.PI
+        var toX = root.pointerX - root.gunX, toY = root.pointerY - root.gunY
+        var rawAngle = Math.atan2(toY, toX) * 180 / Math.PI
         // Hysteresis prevents rapid mirror-state chatter near vertical aim.
         if (!root.aimFlipped && (rawAngle > 100 || rawAngle < -100)) root.aimFlipped = true
         else if (root.aimFlipped && rawAngle > -80 && rawAngle < 80) root.aimFlipped = false
+        // The muzzle sits off the grip's line, so tilt the gun until the line out
+        // of the muzzle runs through the cursor: shots go where you point.
+        var lateral = (root.spec.muzzleY - root.spec.gripY) * root.spec.scale * (root.aimFlipped ? -1 : 1)
+        var reach = Math.max(1, Math.sqrt(toX * toX + toY * toY))
+        var tilt = Math.asin(Math.max(-0.95, Math.min(0.95, lateral / reach))) * 180 / Math.PI
         // Muzzle climb tips the barrel up, whichever way the gun faces.
-        root.aimAngle = rawAngle + (root.aimFlipped ? root.recoilClimb : -root.recoilClimb)
+        root.aimAngle = rawAngle - tilt + (root.aimFlipped ? root.recoilClimb : -root.recoilClimb)
       }
     }
     if (root.recoilClimb > 0 && !fireTimer.running)

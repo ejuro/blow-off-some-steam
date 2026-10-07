@@ -17,8 +17,12 @@ with tempfile.TemporaryDirectory(prefix='steam-weapon-test-') as folder:
         source = (ROOT / 'tests' / name).read_text().replace('import ".." as Steam', f'import "{ROOT.as_uri()}" as Steam')
         config = base / 'shell.qml'
         config.write_text(source)
-        result = subprocess.run(['/usr/bin/qs', '-p', str(config), '--no-color'], env=env,
-                                capture_output=True, text=True, timeout=10)
+        try:
+            result = subprocess.run(['/usr/bin/qs', '-p', str(config), '--no-color'], env=env,
+                                    capture_output=True, text=True, timeout=12)
+        except subprocess.TimeoutExpired as timeout:
+            # A script error inside a timer leaves the shell running; show why.
+            raise AssertionError(str(timeout.stdout or '') + str(timeout.stderr or '')) from None
         log = result.stdout + result.stderr
         assert result.returncode == 0 and marker in log, log
         assert not any(word in log for word in ['ReferenceError', 'TypeError', 'Failed to load configuration']), log

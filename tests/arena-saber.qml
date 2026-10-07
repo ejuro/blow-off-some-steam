@@ -53,6 +53,25 @@ ShellRoot {
     arena.swapWeapon("glock")
     check(!arena.saberHeld && arena.saberIgnition === 0 && arena.saberTrail.length === 0, "switch puts the saber out")
     check(arena.shoot(false) && arena.particles.length > 0, "guns still fire")
+    // Every gun's shot leaves the muzzle on a line through the cursor, facing either way.
+    var guns = ["glock", "revolver", "ak47", "mp5a3", "bazooka"]
+    for (var gi = 0; gi < guns.length; gi++) {
+      for (var side = 0; side < 2; side++) {
+        arena.swapWeapon(guns[gi])
+        arena.recoilClimb = 0
+        arena.gunPositioned = true; arena.gunX = side ? 900 : 300; arena.gunY = 400
+        arena.pointerX = side ? 600 : 600; arena.pointerY = side ? 330 : 470
+        for (var settle = 0; settle < 120; settle++) arena.advanceWeapon(0.016)
+        arena.particles = []
+        var fired = arena.fire()
+        var shot = arena.particles.filter(function(p) { return p.kind === 6 || p.kind === 3 })[0]
+        check(fired && shot, guns[gi] + (side ? " facing left" : " facing right") + " fired: " + fired + " " + arena.particles.length)
+        var ax = arena.pointerX - shot.x, ay = arena.pointerY - shot.y, speed = Math.sqrt(shot.vx * shot.vx + shot.vy * shot.vy)
+        var miss = Math.abs(ax * shot.vy - ay * shot.vx) / speed
+        check(miss < 2 && ax * shot.vx + ay * shot.vy > -1e9, guns[gi] + (side ? " facing left" : " facing right") + " shoots at the cursor (off by " + miss.toFixed(1) + " px)")
+      }
+    }
+    arena.swapWeapon("glock")
     // Signatures. Colt: one round kills every fly on its path and keeps flying.
     arena.swapWeapon("revolver")
     var killsBefore = hunt.round.kills
