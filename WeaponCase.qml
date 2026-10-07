@@ -343,20 +343,11 @@ Panel {
           Column {
             width: parent.width
             spacing: Style.space(2)
+            // Their own row at the top: How to play on the left, sound on the right.
             Item {
               width: parent.width
-              height: Math.max(title.implicitHeight, soundButton.height)
-              Text {
-                id: title
-                anchors.centerIn: parent
-                text: root.helpOpen ? "HOW TO PLAY" : "BLOW OFF SOME STEAM"
-                color: root.foreground
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.heading
-                font.bold: true
-                font.letterSpacing: 1.5
-              }
-              // How to play, mirroring the sound button; ← once it is open.
+              height: soundButton.height
+              // How to play; ← once it is open.
               MenuButton {
                 id: helpButton
                 ui: root
@@ -392,6 +383,17 @@ Panel {
                   font.pixelSize: Style.font.heading
                 }
               }
+            }
+            Text {
+              id: title
+              anchors.horizontalCenter: parent.horizontalCenter
+              topPadding: Style.space(2)
+              text: root.helpOpen ? "HOW TO PLAY" : "BLOW OFF SOME STEAM"
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.heading
+              font.bold: true
+              font.letterSpacing: 1.5
             }
             // The tagline never changes; each section says what to do in it.
             Text {
