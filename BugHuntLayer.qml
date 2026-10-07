@@ -143,20 +143,24 @@ Item {
     nextMedal = Rules.nextMedal(weaponId, record.score)
     hitStop = 0
     arena.flyRecords.add(record)
+    finalKill = lastKillTime > 0 && Date.now() - lastKillTime <= finalKillWindow
     ending = true
     slowMotion.restart()
   }
   // Shots, flies and splats slow to a crawl for a moment, the screen edges
-  // darken, and a kill in the last 0.7 s gets a FINAL KILL! callout.
+  // darken, and a kill in the last finalKillWindow ms gets a FINAL KILL!
+  // callout; the slow motion then lingers on it before the results.
+  readonly property int finalKillWindow: 1500
+  property bool finalKill: false
   SequentialAnimation {
     id: slowMotion
     ScriptAction { script: {
       slowmoSound.stop(); slowmoSound.play()
       timeCallout.show()
-      if (Date.now() - hunt.lastKillTime <= 700) finalKillMark.show(hunt.lastKillX, hunt.lastKillY)
+      if (hunt.finalKill) finalKillMark.show(hunt.lastKillX, hunt.lastKillY)
     } }
     NumberAnimation { target: hunt; property: "timeScale"; to: 0.12; duration: 220; easing.type: Easing.OutQuad }
-    PauseAnimation { duration: 1150 }
+    PauseAnimation { duration: hunt.finalKill ? 2300 : 1150 }
     ScriptAction { script: hunt.showResults() }
   }
   function showResults() {
@@ -179,7 +183,8 @@ Item {
     hitStop = 0; trauma = 0
     for (var d = 0; d < droplets.count; d++) droplets.itemAt(d).active = false
     resultReveal.stop(); shownScore = 0; revealed = false
-    slowMotion.stop(); ending = false; timeScale = 1; lastKillTime = 0
+    slowMotion.stop(); ending = false; timeScale = 1; lastKillTime = 0; finalKill = false
+    finalKillPop.stop(); finalKillMark.opacity = 0
     medal = -1; previousMedal = -1; nextMedal = null
     medalCoin.opacity = 0; medalCoin.shine = -1
     for (var w = 0; w < wings.count; w++) wings.itemAt(w).active = false
@@ -1131,7 +1136,7 @@ Item {
         NumberAnimation { target: finalKillRing; property: "scale"; from: 2.6; to: 1; duration: 260; easing.type: Easing.OutCubic }
         NumberAnimation { target: finalKillMark; property: "scale"; from: 0.6; to: 1; duration: 260; easing.type: Easing.OutBack }
       }
-      PauseAnimation { duration: 800 }
+      PauseAnimation { duration: 1750 }
       NumberAnimation { target: finalKillMark; property: "opacity"; to: 0; duration: 250 }
     }
   }

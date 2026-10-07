@@ -80,11 +80,12 @@ with tempfile.TemporaryDirectory(prefix="steam-fly-test-") as folder:
         onTriggered: {
           check(hunt.ending && !hunt.finished && hunt.secondsLeft === 0 && hunt.timeScale < 1, "time's up slows down before the results")
           check(records.records.length === 1, "saved as soon as time is up")
+          check(hunt.finalKill, "a kill just before the buzzer is the final kill, and the slow motion lingers on it")
           slowed.start()
         }
       }
       Timer {
-        id: slowed; interval: 1500
+        id: slowed; interval: 2700
         onTriggered: {
           check(hunt.finished && !hunt.ending && hunt.timeScale === 1 && hunt.secondsLeft === 0, "timer finished the round")
           check(Math.round(hunt.hudScore) === hunt.score, "the HUD score counted up to the total")
