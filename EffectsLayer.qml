@@ -6,7 +6,7 @@ Item {
   required property var arena
   readonly property var gunFrame: ({ armed: arena.armed, spec: arena.spec, accent: arena.accent,
     gunX: arena.renderGunX, gunY: arena.renderGunY, aimAngle: arena.renderAimAngle,
-    aimFlipped: arena.aimFlipped, recoil: arena.renderRecoil, flash: arena.renderFlash })
+    aimFlipped: arena.aimFlipped, flipScale: arena.flipScale, recoil: arena.renderRecoil, flash: arena.renderFlash })
   property var pool: []
   property int used: 0
 
@@ -94,7 +94,7 @@ Item {
     z: 3
     readonly property real angle: arena.renderAimAngle * Math.PI / 180
     readonly property real localX: (arena.spec.muzzleX - arena.spec.gripX) * arena.spec.scale
-    readonly property real localY: (arena.spec.muzzleY - arena.spec.gripY) * arena.spec.scale * (arena.aimFlipped ? -1 : 1)
+    readonly property real localY: (arena.spec.muzzleY - arena.spec.gripY) * arena.spec.scale * arena.flipScale
     x: Math.floor(arena.renderGunX - arena.renderRecoil * Math.cos(angle) + localX * Math.cos(angle) - localY * Math.sin(angle)) - 48
     y: Math.floor(arena.renderGunY - arena.renderRecoil * Math.sin(angle) + localX * Math.sin(angle) + localY * Math.cos(angle)) - 48
     width: 96

@@ -56,7 +56,7 @@ if (root.flash > 0) {
   var cosA = Math.cos(angle)
   var sinA = Math.sin(angle)
   var localX = (root.spec.muzzleX - root.spec.gripX) * root.spec.scale
-  var localY = (root.spec.muzzleY - root.spec.gripY) * root.spec.scale * (root.aimFlipped ? -1 : 1)
+  var localY = (root.spec.muzzleY - root.spec.gripY) * root.spec.scale * root.flipScale
   var mx = root.gunX - root.recoil * cosA + localX * cosA - localY * sinA
   var my = root.gunY - root.recoil * sinA + localX * sinA + localY * cosA
   c.globalAlpha = root.flash

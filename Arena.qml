@@ -69,6 +69,13 @@ Item {
   property real gunY: 0
   property real aimAngle: 0
   property bool aimFlipped: false
+  // The gun rolls over when it changes sides instead of snapping: 1 facing
+  // right, -1 facing left, passing through 0 mid-roll. Everything that
+  // depends on which way the gun faces (the drawn mirror, muzzle, tilt,
+  // flash, casings, climb and flip) follows this, so nothing jumps.
+  property real flipScale: 1
+  // Degrees the drawn aim still has to turn; the simulation stays awake until it is there.
+  property real aimTurnLeft: 0
   property bool gunPositioned: false
   property bool automaticHoldEngaged: false
   // AK-47 muzzle climb in degrees: grows with each shot of a held burst, settles when released.
@@ -735,6 +742,7 @@ Item {
     if (animateActivation) activationShadeAnimation.start()
     gunPositioned = false
     aimFlipped = false
+    flipScale = 1
     trickAnimation.stop()
     trickAngle = 0
     weaponSpinSound.stop()
@@ -1165,7 +1173,7 @@ Item {
     if (spec.climb) recoilClimb = Math.min(22, recoilClimb + 2.3)
     if (bugHuntEnabled && bugLayerLoader.item) bugLayerLoader.item.kick(spec.kick || 0)
     var localMuzzleX = (spec.muzzleX - spec.gripX) * spec.scale
-    var localMuzzleY = (spec.muzzleY - spec.gripY) * spec.scale * (aimFlipped ? -1 : 1)
+    var localMuzzleY = (spec.muzzleY - spec.gripY) * spec.scale * flipScale
     var muzzleX = gunX - recoil * cosA + localMuzzleX * cosA - localMuzzleY * sinA
     var muzzleY = gunY - recoil * sinA + localMuzzleX * sinA + localMuzzleY * cosA
     var count = spec.particles
@@ -1206,7 +1214,7 @@ Item {
     }
     if (spec.ejectsCase !== false && weapon !== "bazooka") {
       var ejectLocalX = (spec.ejectX - spec.gripX) * spec.scale
-      var ejectLocalY = (spec.ejectY - spec.gripY) * spec.scale * (aimFlipped ? -1 : 1)
+      var ejectLocalY = (spec.ejectY - spec.gripY) * spec.scale * flipScale
       var ejectX = gunX + ejectLocalX * cosA - ejectLocalY * sinA
       var ejectY = gunY + ejectLocalX * sinA + ejectLocalY * cosA
       var ejectSpeed = 4.5 + Math.random() * 2.5
@@ -1566,10 +1574,7 @@ Item {
         Scale {
           origin.x: root.spec.gripX * root.spec.scale
           origin.y: root.spec.gripY * root.spec.scale
-          yScale: root.aimFlipped ? -1 : 1
-          Behavior on yScale {
-            NumberAnimation { duration: 120; easing.type: Easing.InOutQuad }
-          }
+          yScale: root.flipScale
         },
         Rotation {
           origin.x: root.spec.gripX * root.spec.scale
@@ -1958,7 +1963,7 @@ Item {
   property real previousFlash: 0
   readonly property real renderGunX: gunX
   readonly property real renderGunY: gunY
-  readonly property real renderAimAngle: aimAngle + (spec.recoilFlip ? renderRecoil * spec.recoilFlip * (aimFlipped ? 1 : -1) : 0)
+  readonly property real renderAimAngle: aimAngle - (spec.recoilFlip ? renderRecoil * spec.recoilFlip * flipScale : 0)
   readonly property real renderRecoil: simulationAwake ? previousRecoil + (recoil - previousRecoil) * simulationBlend : recoil
   readonly property real renderFlash: simulationAwake ? previousFlash + (flash - previousFlash) * simulationBlend : flash
 
@@ -2004,13 +2009,27 @@ Item {
         if (!root.aimFlipped && (rawAngle > 100 || rawAngle < -100)) root.aimFlipped = true
         else if (root.aimFlipped && rawAngle > -80 && rawAngle < 80) root.aimFlipped = false
         // The muzzle sits off the grip's line, so tilt the gun until the line out
-        // of the muzzle runs through the cursor: shots go where you point.
-        var lateral = (root.spec.muzzleY - root.spec.gripY) * root.spec.scale * (root.aimFlipped ? -1 : 1)
-        var reach = Math.max(1, Math.sqrt(toX * toX + toY * toY))
+        // of the muzzle runs through the cursor: shots go where you point. While
+        // the cursor passes right over the gun, the reach is kept from shrinking
+        // so the tilt cannot spasm.
+        var lateral = (root.spec.muzzleY - root.spec.gripY) * root.spec.scale * root.flipScale
+        var reach = Math.max(root.followDistance * 0.75, Math.sqrt(toX * toX + toY * toY))
         var tilt = Math.asin(Math.max(-0.95, Math.min(0.95, lateral / reach))) * 180 / Math.PI
         // Muzzle climb tips the barrel up, whichever way the gun faces.
-        root.aimAngle = rawAngle - tilt + (root.aimFlipped ? root.recoilClimb : -root.recoilClimb)
+        var target = rawAngle - tilt - root.flipScale * root.recoilClimb
+        // Small turns follow at once; big swings (a flick, crossing over) ease in.
+        var turn = ((target - root.aimAngle) % 360 + 540) % 360 - 180
+        var wanted = turn
+        if (Math.abs(turn) > 25) turn *= 1 - Math.exp(-deltaSeconds / 0.035)
+        root.aimTurnLeft = Math.abs(wanted - turn)
+        root.aimAngle = ((root.aimAngle + turn + 540) % 360) - 180
       }
+    }
+    var facing = root.aimFlipped ? -1 : 1
+    // A full roll from one side to the other takes 0.12 s.
+    if (root.flipScale !== facing) {
+      var step = deltaSeconds * 2 / 0.12
+      root.flipScale = Math.abs(facing - root.flipScale) <= step ? facing : root.flipScale + (facing > root.flipScale ? step : -step)
     }
     if (root.recoilClimb > 0 && !fireTimer.running)
       root.recoilClimb = Math.max(0, root.recoilClimb - deltaSeconds * 45)
@@ -2240,7 +2259,7 @@ Item {
       var dy = root.pointerY - root.gunY
       var distance = Math.sqrt(dx * dx + dy * dy)
       var settled = !root.gunPositioned || distance <= 0.001 || Math.abs(distance - root.followDistance) < 0.01
-      if (settled && root.recoilClimb === 0 && !root.saberHeld && root.saberIgnition === 0 && root.saberTrail.length === 0 && root.saberHeat.length === 0 && !trickAnimation.running && root.particles.length === 0 && root.pendingEffects.length === 0 && root.recoil === 0 && root.flash === 0) {
+      if (settled && root.recoilClimb === 0 && Math.abs(root.flipScale) === 1 && root.aimTurnLeft < 0.05 && !root.saberHeld && root.saberIgnition === 0 && root.saberTrail.length === 0 && root.saberHeat.length === 0 && !trickAnimation.running && root.particles.length === 0 && root.pendingEffects.length === 0 && root.recoil === 0 && root.flash === 0) {
         root.simulationAwake = false
         root.simulationBlend = 1
       }

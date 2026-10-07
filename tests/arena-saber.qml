@@ -71,6 +71,22 @@ ShellRoot {
         check(miss < 2 && ax * shot.vx + ay * shot.vy > -1e9, guns[gi] + (side ? " facing left" : " facing right") + " shoots at the cursor (off by " + miss.toFixed(1) + " px)")
       }
     }
+    // Sweeping the cursor from right of the gun to its left: the gun rolls over and
+    // turns smoothly, never jumping more than 30 degrees or half a roll in one frame.
+    arena.swapWeapon("glock")
+    arena.gunPositioned = true; arena.gunX = 500; arena.gunY = 400; arena.pointerX = 640; arena.pointerY = 380
+    for (var w0 = 0; w0 < 120; w0++) arena.advanceWeapon(0.016)
+    var lastAngle = arena.renderAimAngle, lastRoll = arena.flipScale, worstTurn = 0, worstRoll = 0
+    for (var f = 0; f < 90; f++) {
+      arena.pointerX -= 12
+      arena.advanceWeapon(0.016)
+      worstTurn = Math.max(worstTurn, Math.abs(((arena.renderAimAngle - lastAngle) % 360 + 540) % 360 - 180))
+      worstRoll = Math.max(worstRoll, Math.abs(arena.flipScale - lastRoll))
+      lastAngle = arena.renderAimAngle; lastRoll = arena.flipScale
+    }
+    for (var w1 = 0; w1 < 60; w1++) arena.advanceWeapon(0.016)
+    check(arena.aimFlipped && arena.flipScale === -1, "the gun ends up facing left")
+    check(worstTurn < 30 && worstRoll < 0.5, "crossing over is smooth: " + worstTurn.toFixed(1) + " deg, roll " + worstRoll.toFixed(2))
     // The Colt is thrown back and its barrel flips up, for the look only, and it eases back.
     arena.swapWeapon("revolver")
     arena.gunPositioned = true; arena.gunX = 300; arena.gunY = 400; arena.pointerX = 600; arena.pointerY = 400
