@@ -77,6 +77,8 @@ omarchy plugin validate .
 
 The five weapon sprites are from [GUNS V1.01 by Arcade Island](https://arcadeisland.itch.io/guns-asset-pack-v1), used and modified under the terms published on that page. The sprites under `assets/` are not covered by this plugin's MIT license. Arcade Island permits use and modification in personal and commercial projects, but does not permit reselling the assets individually or redistributing them as your own creation.
 
+The fly sprite sheet (`assets/fly-spritesheet.png`) was generated with OpenAI's image model and edited for this plugin; it is covered by the plugin's MIT license.
+
 ## Third-party sounds
 
 The processed sounds under `sounds/` are derived from the following Pixabay downloads and are used under the [Pixabay Content License](https://pixabay.com/service/license-summary/):

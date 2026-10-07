@@ -4,4 +4,8 @@ Source: [GUNS V1.01 by Arcade Island](https://arcadeisland.itch.io/guns-asset-pa
 
 The source page permits use and modification in personal and commercial projects. Credit is optional but appreciated. It prohibits reselling the assets individually or redistributing them as your own creation.
 
-These image files are third-party artwork and are not covered by the plugin's MIT license.
+The weapon images above are third-party artwork and are not covered by the plugin's MIT license.
+
+## Fly sprite sheet
+
+`fly-spritesheet.png` was generated with OpenAI's image model and edited for this plugin. It is covered by the plugin's MIT license.
