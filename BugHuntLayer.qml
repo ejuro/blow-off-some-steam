@@ -89,8 +89,8 @@ Item {
     var cue = countdownStep > 0 ? countdownBeep : countdownGo
     cue.stop(); cue.play()
   }
-  RemoteSound { id: countdownBeep; audio: hunt.arena.audio; source: Qt.resolvedUrl("sounds/countdown-beep.wav"); volume: 0.5 }
-  RemoteSound { id: countdownGo; audio: hunt.arena.audio; source: Qt.resolvedUrl("sounds/countdown-go.wav"); volume: 0.55 }
+  RemoteSound { id: countdownBeep; audio: hunt.arena.audio; source: Qt.resolvedUrl("sounds/countdown-beep.wav"); volume: 0.62 }
+  RemoteSound { id: countdownGo; audio: hunt.arena.audio; source: Qt.resolvedUrl("sounds/countdown-go.wav"); volume: 0.37 }
   Timer {
     id: countdownTimer
     interval: 650; repeat: true
@@ -259,7 +259,7 @@ Item {
     audio: hunt.arena.audio
     id: splatSound
     source: Qt.resolvedUrl("sounds/bug-splat.wav")
-    volume: 0.45
+    volume: 0.67
   }
 
   // A bullet's path this step against every fly. Ordinary rounds stop in the
@@ -398,8 +398,8 @@ Item {
     for (var i = 0; i < flies.count; i++) if (flies.itemAt(i).golden && flies.itemAt(i).alive) return false
     return true
   }
-  RemoteSound { id: goldenChime; audio: hunt.arena.audio; source: Qt.resolvedUrl("sounds/golden-chime.wav"); volume: 0.5 }
-  RemoteSound { id: goldenKill; audio: hunt.arena.audio; source: Qt.resolvedUrl("sounds/golden-kill.wav"); volume: 0.6 }
+  RemoteSound { id: goldenChime; audio: hunt.arena.audio; source: Qt.resolvedUrl("sounds/golden-chime.wav"); volume: 0.43 }
+  RemoteSound { id: goldenKill; audio: hunt.arena.audio; source: Qt.resolvedUrl("sounds/golden-kill.wav"); volume: 0.5 }
   RemoteSound { id: slowmoSound; audio: hunt.arena.audio; source: Qt.resolvedUrl("sounds/slowmo.wav"); volume: 0.6 }
   RemoteSound { id: medalThud; audio: hunt.arena.audio; source: Qt.resolvedUrl("sounds/medal-thud.wav"); volume: 0.6 }
   // A ding a step higher for each medal the results track passes.
@@ -1220,8 +1220,8 @@ Item {
     if (secondsLeft === 10) finalCallout.show()
   }
   Timer { id: halfTick; interval: 500; onTriggered: if (!hunt.finished) { finalTick.stop(); finalTick.play() } }
-  RemoteSound { id: clockTick; audio: hunt.arena.audio; source: Qt.resolvedUrl("sounds/clock-tick.wav"); volume: 0.55 }
-  RemoteSound { id: finalTick; audio: hunt.arena.audio; source: Qt.resolvedUrl("sounds/clock-tick-final.wav"); volume: 0.6 }
+  RemoteSound { id: clockTick; audio: hunt.arena.audio; source: Qt.resolvedUrl("sounds/clock-tick.wav"); volume: 0.78 }
+  RemoteSound { id: finalTick; audio: hunt.arena.audio; source: Qt.resolvedUrl("sounds/clock-tick-final.wav"); volume: 0.64 }
 
   // A colour fading in from all four screen edges.
   component EdgeShade: Item {

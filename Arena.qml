@@ -197,7 +197,7 @@ Item {
   property real saberHumLevel: 0
   property real saberMixClock: 0
   // The saber files share one mastering gain, so they all play at this volume.
-  readonly property real saberVolume: 0.3
+  readonly property real saberVolume: 0.45
   readonly property real saberBladeAngle: aimAngle + trickAngle
   function igniteSaber() {
     if (!armed || roundOver || weaponWheelOpen || weapon !== "lightsaber" || saberHeld) return false
@@ -1850,21 +1850,21 @@ Item {
     audio: root.audio
     id: pistolSound
     source: Qt.resolvedUrl("sounds/pistol-shot.wav")
-    volume: 0.62
+    volume: 1.0
   }
 
   RemoteSound {
     audio: root.audio
     id: akSingleSound
     source: Qt.resolvedUrl("sounds/ak-single-shot.wav")
-    volume: 0.56
+    volume: 0.53
   }
 
   RemoteSound {
     audio: root.audio
     id: mp5SingleSound
     source: Qt.resolvedUrl("sounds/mp5-single-shot.wav")
-    volume: 0.56
+    volume: 0.5
   }
 
   RemoteSound {
@@ -1887,7 +1887,7 @@ Item {
     audio: root.audio
     id: revolverSound
     source: Qt.resolvedUrl("sounds/revolver-shot.wav")
-    volume: 0.66
+    volume: 0.32
   }
 
   RemoteSound {
@@ -1908,14 +1908,14 @@ Item {
     audio: root.audio
     id: targetHitSound
     source: Qt.resolvedUrl("sounds/target-hit.wav")
-    volume: 0.34
+    volume: 1.0
   }
 
   RemoteSound {
     audio: root.audio
     id: weaponSpinSound
     source: Qt.resolvedUrl("sounds/weapon-spin.wav")
-    volume: 0.30
+    volume: 0.8
   }
 
   RemoteSound { audio: root.audio; id: windowBreak1; source: Qt.resolvedUrl("sounds/window-break-1.wav"); volume: 0.72 }
@@ -1929,7 +1929,7 @@ Item {
     audio: root.audio
     id: weaponReadySound
     source: Qt.resolvedUrl("sounds/weapon-ready.wav")
-    volume: 0.34
+    volume: 0.85
   }
 
   RemoteSound {

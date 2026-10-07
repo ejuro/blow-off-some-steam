@@ -92,6 +92,8 @@ The processed sounds under `sounds/` are derived from the following Pixabay down
 
 These audio files are not covered by this plugin's MIT license. See `sounds/README.md` for source links and details.
 
+Sound levels: `python3 tools/measure-sound-levels.py` lists how loud every sound plays in game (the file's loudness plus its volume in the QML), loudest first, without playing anything.
+
 Fly Hunt checks: `node tests/fly-round.cjs` for scoring rules, and `python tests/fly-hunt.py` for the QML timer, replay, cutoff, and records persistence. The QML check runs offscreen with temporary state and no desktop/audio interaction.
 
 Lightsaber collision and records checks: `node tests/saber.cjs`; cut geometry: `node tests/cut.cjs`. Silent hidden-window drawer and saber integration checks (requires the desktop session): `python tests/weapon-runtime.py`.
