@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Effects
 import "FlyRound.js" as Rules
 import "SaberGeometry.js" as Saber
 
@@ -32,6 +33,27 @@ Item {
   property bool countingDown: false
   property int countdownStep: 0
   readonly property var multiKillNames: ["", "", "DOUBLE!", "TRIPLE!", "QUAD!"]
+  // Time's up plays out in slow motion before the results: flies, splats and
+  // shots slow to timeScale, and a kill in the last moment is called out.
+  property bool ending: false
+  property real timeScale: 1
+  property real lastKillTime: 0
+  property real lastKillX: 0
+  property real lastKillY: 0
+  // The HUD score fills as each kill's points fly up and land in it.
+  property int bankedScore: 0
+  property real hudScore: 0
+  Behavior on hudScore { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
+  function bank(points) {
+    bankedScore += points
+    hudScore = bankedScore
+    scorePunch.restart()
+  }
+  // This round's medal (-1 for none), the weapon's medal before it, and the next one up.
+  property int medal: -1
+  property int previousMedal: -1
+  property var nextMedal: null
+  readonly property color gold: "#ffc93c"
   // Hit feel: each kill briefly freezes the flies and projectiles (hit-stop) and
   // adds shake "trauma" to the play area. The weapon and HUD never shake.
   property real hitStop: 0
@@ -79,18 +101,19 @@ Item {
   }
   Component.onCompleted: briefing = true
   function acceptHits() {
-    if (finished || countingDown || briefing) return false
+    if (finished || ending || countingDown || briefing) return false
     if (Date.now() >= round.deadline) { finishRound(); return false }
     return true
   }
-  function recordKill(x, y, source, weapon) {
+  function recordKill(x, y, source, weapon, golden) {
     var now = Date.now()
     var before = round.score
-    if (!Rules.kill(round, now)) { finishRound(); return }
+    if (!Rules.kill(round, now, golden)) { finishRound(); return }
+    lastKillTime = now; lastKillX = x; lastKillY = y
     score = round.score; kills = round.kills
     combo = round.combo; bestCombo = round.bestCombo
     if (comboBreaking) { comboBreak.stop(); comboValue.shake = 0; comboBreaking = false }
-    showPopup(x, y, round.score - before, round.combo)
+    showPopup(x, y, round.score - before, round.combo, golden)
     // Bullets hit one fly each, so only blasts and saber sweeps can multi-kill.
     var window = source === "saber" ? 250 : source === "blast" ? 40 : -1
     if (source === burstSource && now - burstLast <= window) burstCount++
@@ -104,8 +127,8 @@ Item {
     combo = 0
   }
   property int popupCursor: 0
-  function showPopup(x, y, points, multiplier) {
-    popups.itemAt(popupCursor).start(x, y, points, multiplier)
+  function showPopup(x, y, points, multiplier, golden) {
+    popups.itemAt(popupCursor).start(x, y, points, multiplier, golden)
     popupCursor = (popupCursor + 1) % popups.count
   }
   function finishRound() {
@@ -114,10 +137,34 @@ Item {
     secondsLeft = 0
     previousBest = arena.flyRecords.bests[round.weapon] || null
     personalBest = record.score > 0 && (!previousBest || record.score > previousBest.score)
-    hitStop = 0; trauma = 0
+    var weaponId = round.weapon || weapon
+    medal = Rules.medal(weaponId, record.score)
+    previousMedal = previousBest ? Rules.medal(weaponId, previousBest.score) : -1
+    nextMedal = Rules.nextMedal(weaponId, record.score)
+    hitStop = 0
+    arena.flyRecords.add(record)
+    ending = true
+    slowMotion.restart()
+  }
+  // Shots, flies and splats slow to a crawl for a moment, the screen edges
+  // darken, and a kill in the last 0.7 s gets a FINAL KILL! callout.
+  SequentialAnimation {
+    id: slowMotion
+    ScriptAction { script: {
+      slowmoSound.stop(); slowmoSound.play()
+      timeCallout.show()
+      if (Date.now() - hunt.lastKillTime <= 700) finalKillMark.show(hunt.lastKillX, hunt.lastKillY)
+    } }
+    NumberAnimation { target: hunt; property: "timeScale"; to: 0.12; duration: 220; easing.type: Easing.OutQuad }
+    PauseAnimation { duration: 1150 }
+    ScriptAction { script: hunt.showResults() }
+  }
+  function showResults() {
+    ending = false; timeScale = 1; trauma = 0
+    for (var k = 0; k < popups.count; k++) popups.itemAt(k).stop()
+    hudScore = bankedScore = score
     finished = true
     resultReveal.restart()
-    arena.flyRecords.add(record)
   }
   function restart() {
     arena.clearRoundEffects()
@@ -134,6 +181,12 @@ Item {
     hitStop = 0; trauma = 0
     for (var d = 0; d < droplets.count; d++) droplets.itemAt(d).active = false
     resultReveal.stop(); shownScore = 0; revealed = false
+    slowMotion.stop(); ending = false; timeScale = 1; lastKillTime = 0
+    bankedScore = 0; hudScore = 0; medal = -1; previousMedal = -1; nextMedal = null
+    medalCoin.opacity = 0; medalCoin.shine = -1
+    for (var w = 0; w < wings.count; w++) wings.itemAt(w).active = false
+    for (var g = 0; g < coins.count; g++) coins.itemAt(g).active = false
+    for (var p = 0; p < sparkles.count; p++) sparkles.itemAt(p).active = false
     for (var c = 0; c < confetti.count; c++) confetti.itemAt(c).active = false
     confettiFlying = false
     finished = false
@@ -142,7 +195,7 @@ Item {
   Timer {
     interval: 50; running: !hunt.finished; repeat: true
     onTriggered: {
-      if (hunt.countingDown) return
+      if (hunt.countingDown || hunt.ending) return
       var now = Date.now()
       hunt.secondsLeft = Rules.remaining(hunt.round, now)
       if (hunt.combo > 0 && hunt.round.lastKill !== null && now - hunt.round.lastKill > Rules.comboWindow(hunt.round.combo)) hunt.breakCombo()
@@ -195,7 +248,7 @@ Item {
       if (!fly || !fly.alive || !Saber.hits(fly.x, fly.y, 25, previous, current)) continue
       var frame = Math.floor(wingTime * (28 + fly.index * 2)) % 8
       for (var side = -1; side <= 1; side += 2) {
-        fragments.itemAt(fragmentCursor).start(fly.x, fly.y, angle, side, frame, fly.facingLeft)
+        fragments.itemAt(fragmentCursor).start(fly.x, fly.y, angle, side, frame, fly.facingLeft, fly.golden)
         fragmentCursor = (fragmentCursor + 1) % fragments.count
       }
       fly.hit("saber", "lightsaber", swingX, swingY)
@@ -204,6 +257,169 @@ Item {
     return struck
   }
   Repeater { id: fragments; model: 32; delegate: FlyFragment { transform: worldShake } }
+
+  // A shot or blast sends the body tumbling along the hit (blasts fling it
+  // hard), and every kill sheds both wings, which flutter down like leaves.
+  property int wingCursor: 0
+  function shatter(fly, source, dirX, dirY) {
+    var length = Math.sqrt(dirX * dirX + dirY * dirY)
+    var heading = length > 0.001 ? Math.atan2(dirY, dirX) : -Math.PI / 2
+    if (source !== "saber") {
+      var blast = source === "blast"
+      var speed = blast ? 520 + Math.random() * 300 : 170 + Math.random() * 110
+      var turn = (Math.random() < 0.5 ? -1 : 1) * (blast ? 650 + Math.random() * 500 : 220 + Math.random() * 280)
+      fragments.itemAt(fragmentCursor).tumble(fly.x, fly.y, fly.frame(), fly.facingLeft, fly.golden,
+        Math.cos(heading) * speed, Math.sin(heading) * speed - (blast ? 240 : 150), turn)
+      fragmentCursor = (fragmentCursor + 1) % fragments.count
+    }
+    for (var side = -1; side <= 1; side += 2) {
+      wings.itemAt(wingCursor).start(fly.x + side * 9, fly.y - 14, side, heading, fly.golden)
+      wingCursor = (wingCursor + 1) % wings.count
+    }
+  }
+  Repeater {
+    id: wings
+    model: 24
+    delegate: Rectangle {
+      property bool active: false
+      property real vx: 0
+      property real vy: 0
+      property real age: 0
+      property real phase: 0
+      property real tilt: 0
+      visible: active
+      transform: worldShake
+      width: 20; height: 9; radius: height / 2
+      color: golden ? Qt.rgba(1, 0.86, 0.45, 0.55) : Qt.rgba(0.86, 0.93, 0.97, 0.5)
+      border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.7)
+      property bool golden: false
+      opacity: Math.max(0, Math.min(1, (1.3 - age) / 0.35))
+      function start(px, py, side, heading, isGolden) {
+        x = px - width / 2; y = py - height / 2; age = 0; golden = !!isGolden
+        vx = side * (70 + Math.random() * 90) + Math.cos(heading) * 60
+        vy = -(80 + Math.random() * 90) + Math.sin(heading) * 40
+        phase = Math.random() * 6.28; tilt = side * (20 + Math.random() * 30)
+        active = true
+      }
+      function advance(dt) {
+        if (!active) return
+        age += dt
+        if (age >= 1.3) { active = false; return }
+        // Heavy drag, light gravity and a sideways sway: they float, not fall.
+        vx *= Math.exp(-dt * 2.6); vy = vy * Math.exp(-dt * 2.6) + 260 * dt
+        x += (vx + Math.sin(age * 9 + phase) * 45) * dt; y += vy * dt
+        rotation = tilt + 40 * Math.sin(age * 13 + phase)
+      }
+    }
+  }
+
+  // Golden flies: rare, fast, worth ×3, and gone after a few seconds. One at a time.
+  readonly property real goldenChance: 0.05
+  readonly property real goldenLife: 5
+  function goldenAllowed() {
+    if (ending || countingDown || briefing || finished) return false
+    if (Date.now() - (round.deadline - Rules.roundSeconds * 1000) < 4000 || secondsLeft <= 3) return false
+    for (var i = 0; i < flies.count; i++) if (flies.itemAt(i).golden && flies.itemAt(i).alive) return false
+    return true
+  }
+  RemoteSound { id: goldenChime; audio: hunt.arena.audio; source: Qt.resolvedUrl("sounds/golden-chime.wav"); volume: 0.5 }
+  RemoteSound { id: goldenKill; audio: hunt.arena.audio; source: Qt.resolvedUrl("sounds/golden-kill.wav"); volume: 0.6 }
+  RemoteSound { id: slowmoSound; audio: hunt.arena.audio; source: Qt.resolvedUrl("sounds/slowmo.wav"); volume: 0.6 }
+  RemoteSound { id: medalThud; audio: hunt.arena.audio; source: Qt.resolvedUrl("sounds/medal-thud.wav"); volume: 0.6 }
+  // A golden kill: coins burst out, the screen flashes gold, the hit lands harder.
+  property int coinCursor: 0
+  function goldenBurst(px, py) {
+    goldenKill.stop(); goldenKill.play()
+    for (var i = 0; i < 22; i++) {
+      coins.itemAt(coinCursor).start(px, py)
+      coinCursor = (coinCursor + 1) % coins.count
+    }
+    goldFlash.restart()
+    hitStop = Math.max(hitStop, 0.13)
+    trauma = Math.min(1, trauma + 0.35)
+  }
+  Repeater {
+    id: coins
+    model: 44
+    delegate: Rectangle {
+      property bool active: false
+      property real vx: 0
+      property real vy: 0
+      property real age: 0
+      property real flip: 0
+      property real flipRate: 0
+      readonly property real size: 9 + index % 4 * 1.5
+      visible: active
+      transform: worldShake
+      z: 3
+      // Edge-on and face-on in turn, like a spinning coin.
+      width: size * Math.max(0.18, Math.abs(Math.cos(flip))); height: size; radius: height / 2
+      color: Math.cos(flip) > 0 ? hunt.gold : "#e0a521"
+      border.width: 1; border.color: "#9c700e"
+      opacity: Math.max(0, Math.min(1, (1.2 - age) / 0.3))
+      property real cx: 0
+      property real cy: 0
+      x: cx - width / 2; y: cy - height / 2
+      function start(px, py) {
+        cx = px; cy = py; age = 0; flip = Math.random() * 3
+        var heading = -Math.PI / 2 + (Math.random() - 0.5) * 2.4, speed = 260 + Math.random() * 380
+        vx = Math.cos(heading) * speed; vy = Math.sin(heading) * speed
+        flipRate = 10 + Math.random() * 12
+        active = true
+      }
+      function advance(dt) {
+        if (!active) return
+        age += dt
+        if (age >= 1.2) { active = false; return }
+        cx += vx * dt; cy += vy * dt
+        vx *= Math.exp(-dt * 1.2); vy += 1100 * dt
+        flip += flipRate * dt
+      }
+    }
+  }
+  // Gold dust trailing a golden fly.
+  property int sparkleCursor: 0
+  function sparkle(px, py) {
+    sparkles.itemAt(sparkleCursor).start(px, py)
+    sparkleCursor = (sparkleCursor + 1) % sparkles.count
+  }
+  Repeater {
+    id: sparkles
+    model: 40
+    delegate: Rectangle {
+      property bool active: false
+      property real age: 0
+      property real life: 0.6
+      property real vy: 0
+      visible: active
+      transform: worldShake
+      width: 3 + index % 4 * 1.5; height: width
+      rotation: 45
+      color: index % 3 ? hunt.gold : "#fff4c8"
+      opacity: Math.max(0, 1 - age / life)
+      scale: 1 - 0.6 * age / life
+      function start(px, py) {
+        x = px - width / 2 + (Math.random() - 0.5) * 22; y = py - height / 2 + (Math.random() - 0.5) * 18
+        age = 0; life = 0.4 + Math.random() * 0.35; vy = 20 + Math.random() * 40
+        active = true
+      }
+      function advance(dt) {
+        if (!active) return
+        age += dt
+        if (age >= life) { active = false; return }
+        y += vy * dt
+      }
+    }
+  }
+  Rectangle {
+    id: goldFlashLayer
+    anchors.fill: parent
+    z: 1
+    color: hunt.gold
+    opacity: 0
+    visible: opacity > 0
+    NumberAnimation { id: goldFlash; target: goldFlashLayer; property: "opacity"; from: 0.2; to: 0; duration: 320; easing.type: Easing.OutQuad }
+  }
 
   // Drops sprayed along the hit direction; a fixed pool, recycled round-robin.
   property int dropletCursor: 0
@@ -249,7 +465,7 @@ Item {
   FrameAnimation {
     running: hunt.visible && hunt.arena.armed && !hunt.finished
     onTriggered: {
-      var dt = Math.min(frameTime, 0.05)
+      var dt = Math.min(frameTime, 0.05) * hunt.timeScale
       hunt.shakeTime += dt
       hunt.trauma = Math.max(0, hunt.trauma - dt * 2.2)
       if (hunt.hitStop > 0) { hunt.hitStop = Math.max(0, hunt.hitStop - dt); return }
@@ -258,7 +474,10 @@ Item {
         ? Math.max(0, 1 - (Date.now() - hunt.round.lastKill) / Rules.comboWindow(hunt.round.combo)) : 0
       for (var j = 0; j < fragments.count; j++) fragments.itemAt(j).advance(dt)
       for (var k = 0; k < droplets.count; k++) droplets.itemAt(k).advance(dt)
-      if (!hunt.acceptHits()) return
+      for (var w = 0; w < wings.count; w++) wings.itemAt(w).advance(dt)
+      for (var g = 0; g < coins.count; g++) coins.itemAt(g).advance(dt)
+      for (var p = 0; p < sparkles.count; p++) sparkles.itemAt(p).advance(dt)
+      if (!hunt.ending && !hunt.acceptHits()) return
       for (var i = 0; i < flies.count; i++) flies.itemAt(i).advance(dt)
     }
   }
@@ -284,10 +503,16 @@ Item {
       // True while flying in from off screen; the edge clamp waits until it is inside.
       property bool entering: false
       property real splatScale: 1
+      property bool golden: false
+      property real goldenAge: 0
+      property real sparkleClock: 0
+      // A golden fly that outlived goldenLife heads off screen and is gone.
+      property bool leaving: false
       transform: worldShake
 
+      function frame() { return Math.floor(hunt.wingTime * (28 + index * 2)) % 8 }
       function reset() {
-        alive = false; respawnTime = index * 0.12
+        alive = false; respawnTime = index * 0.12; golden = false; leaving = false
         splatFade.stop(); splat.opacity = 0
       }
       function randomX() { return Math.min(hunt.width / 2, 65) + Math.random() * Math.max(0, hunt.width - 130) }
@@ -307,6 +532,13 @@ Item {
         var minimum = [90, 180, 340, 560]
         var spread = [80, 130, 190, 240]
         baseSpeed = minimum[index] + Math.random() * spread[index]
+        leaving = false
+        golden = hunt.goldenAllowed() && Math.random() < hunt.goldenChance
+        if (golden) {
+          goldenAge = 0
+          baseSpeed = 520 + Math.random() * 200
+          goldenChime.stop(); goldenChime.play()
+        }
         chooseDestination()
         var dx = destinationX - x, dy = destinationY - y, distance = Math.max(1, Math.sqrt(dx * dx + dy * dy))
         vx = dx / distance * speed; vy = dy / distance * speed
@@ -319,17 +551,33 @@ Item {
           if (respawnTime <= 0) spawn()
           return
         }
+        if (golden) {
+          goldenAge += dt
+          sparkleClock += dt
+          while (sparkleClock > 0.03) { sparkleClock -= 0.03; hunt.sparkle(x, y - 10) }
+          if (goldenAge > hunt.goldenLife && !leaving) {
+            // Out past the nearest side edge.
+            leaving = true
+            destinationX = x < hunt.width / 2 ? -120 : hunt.width + 120
+            destinationY = y; steeringTime = 99
+          }
+          if (leaving && (x < -60 || x > hunt.width + 60)) {
+            alive = false; golden = false; leaving = false
+            respawnTime = 0.4
+            return
+          }
+        }
         steeringTime -= dt
         var dx = destinationX - x, dy = destinationY - y
         var distance = Math.sqrt(dx * dx + dy * dy)
-        if (steeringTime <= 0 || distance < 25) { chooseDestination(); dx = destinationX - x; dy = destinationY - y; distance = Math.sqrt(dx * dx + dy * dy) }
+        if (!leaving && (steeringTime <= 0 || distance < 25)) { chooseDestination(); dx = destinationX - x; dy = destinationY - y; distance = Math.sqrt(dx * dx + dy * dy) }
         var blend = 1 - Math.exp(-dt * (index >= 2 ? 7 : 4))
         vx += (dx / Math.max(1, distance) * speed - vx) * blend
         vy += (dy / Math.max(1, distance) * speed - vy) * blend
         x += vx * dt; y += vy * dt
         var minX = 35, maxX = Math.max(35, hunt.width - 35), minY = 45, maxY = Math.max(45, hunt.height - 35)
         if (entering && x >= minX && x <= maxX && y >= minY && y <= maxY) entering = false
-        if (!entering) {
+        if (!entering && !leaving) {
           x = Math.max(minX, Math.min(maxX, x))
           y = Math.max(minY, Math.min(maxY, y))
         }
@@ -342,17 +590,35 @@ Item {
         splatSound.stop()
         splatSound.play()
         respawnTime = 0.25 + Math.random() * 0.30
-        hunt.recordKill(x, y, source, weapon)
+        var wasGolden = golden
+        hunt.recordKill(x, y, source, weapon, wasGolden)
+        hunt.shatter(fly, source, dirX || 0, dirY || 0)
+        golden = false; leaving = false
         // Splats and sprays grow with the combo.
         splatScale = 0.85 + 0.15 * hunt.combo
         splatX = x; splatY = y
+        splat.gold = wasGolden
         splatFade.stop(); splat.opacity = 1; splat.requestPaint(); splatFade.start()
         hunt.spray(x, y, dirX || 0, dirY || 0, 4 + 2 * hunt.combo)
+        if (wasGolden) hunt.goldenBurst(x, y)
       }
       Component.onCompleted: respawnTime = index * 0.12
 
+      // A warm halo that breathes behind a golden fly.
+      Canvas {
+        visible: fly.alive && fly.golden
+        x: -49; y: -59; width: 90; height: 90
+        scale: 1 + 0.12 * Math.sin(hunt.wingTime * 9)
+        onPaint: {
+          var c = getContext("2d"), glow = c.createRadialGradient(45, 45, 0, 45, 45, 45)
+          glow.addColorStop(0, "rgba(255, 214, 90, 0.55)"); glow.addColorStop(1, "rgba(255, 200, 60, 0)")
+          c.fillStyle = glow; c.fillRect(0, 0, 90, 90)
+        }
+      }
       AnimatedSprite {
         x: -44; y: -54
+        layer.enabled: fly.golden
+        layer.effect: MultiEffect { colorization: 0.85; colorizationColor: "#ffc02e"; brightness: 0.2 }
         width: 80; height: 80
         source: Qt.resolvedUrl("assets/fly-spritesheet.png")
         // Source is 1774 x 887: four columns, two rows, with spare edge pixels.
@@ -377,7 +643,8 @@ Item {
         scale: fly.splatScale
         opacity: 0
         visible: opacity > 0
-        readonly property color ink: hunt.arena.accent
+        property bool gold: false
+        readonly property color ink: gold ? hunt.gold : hunt.arena.accent
         onInkChanged: if (visible) requestPaint()
         onPaint: {
           var c = getContext("2d")
@@ -441,7 +708,16 @@ Item {
         }
       }
       HudValue { label: "BEST"; value: hunt.arena.flyRecords.bests[hunt.weapon] ? hunt.arena.flyRecords.bests[hunt.weapon].score : "—"; valueColor: hunt.ui.muted }
-      HudValue { label: "SCORE"; value: hunt.score }
+      HudValue {
+        id: scoreValue
+        label: "SCORE"; value: Math.round(hunt.hudScore)
+        valueColor: scorePunch.running ? hunt.ui.accent : hunt.ui.foreground
+        SequentialAnimation {
+          id: scorePunch
+          NumberAnimation { target: scoreValue; property: "scale"; to: 1.28; duration: 60; easing.type: Easing.OutQuad }
+          NumberAnimation { target: scoreValue; property: "scale"; to: 1; duration: 240; easing.type: Easing.OutBack }
+        }
+      }
       HudValue { label: "FLIES"; value: hunt.kills }
       HudValue {
         id: comboValue
@@ -532,7 +808,9 @@ Item {
     }
   }
 
-  // Floating "+points ×combo" at each kill.
+  // "+points ×combo" pops up at each kill, then flies into the HUD score,
+  // which takes the points only when they land.
+  function scoreTarget() { return scoreValue.mapToItem(hunt, scoreValue.width - 18, scoreValue.height / 2) }
   Repeater {
     id: popups
     model: 12
@@ -540,46 +818,69 @@ Item {
       id: popup
       property int points: 0
       property int multiplier: 1
+      property bool golden: false
+      // Points not yet banked into the HUD score.
+      property bool pending: false
+      property real startX: 0
       property real startY: 0
+      property real targetX: 0
+      property real targetY: 0
+      property real lift: 0
+      property real fly: 0
+      property real popScale: 1
       visible: false
       z: 5
-      function start(px, py, gained, combo) {
-        points = gained; multiplier = combo
-        x = px; startY = py - 34
+      x: startX + (targetX - startX) * fly
+      readonly property real risenY: startY - 50 * lift
+      y: risenY + (targetY - risenY) * fly
+      scale: popScale * (1 - 0.5 * fly)
+      function start(px, py, gained, combo, isGolden) {
+        land()
+        points = gained; multiplier = combo; golden = !!isGolden
+        startX = px; startY = py - 34; targetX = px; targetY = py
+        pending = true
         rise.restart()
       }
-      function stop() { rise.stop(); visible = false }
+      function land() {
+        if (pending) { pending = false; hunt.bank(points) }
+        visible = false
+      }
+      function stop() { rise.stop(); pending = false; visible = false }
       Row {
         x: -width / 2; y: -height / 2
         spacing: 5
         Text {
           text: "+" + popup.points
-          color: hunt.ui.accent
+          color: popup.golden ? hunt.gold : hunt.ui.accent
           style: Text.Outline; styleColor: hunt.ui.tint(hunt.ui.background, 0.85)
           font.family: hunt.ui.fontFamily; font.pixelSize: 20 + popup.multiplier * 3; font.bold: true
         }
         Text {
-          visible: popup.multiplier > 1
+          visible: popup.multiplier > 1 || popup.golden
           anchors.baseline: parent.children[0].baseline
-          text: "×" + popup.multiplier
-          color: hunt.ui.foreground
+          text: popup.golden ? "GOLD ×" + Rules.goldenValue : "×" + popup.multiplier
+          color: popup.golden ? hunt.gold : hunt.ui.foreground
           style: Text.Outline; styleColor: hunt.ui.tint(hunt.ui.background, 0.85)
           font.family: hunt.ui.fontFamily; font.pixelSize: 15; font.bold: true
         }
       }
-      ParallelAnimation {
+      SequentialAnimation {
         id: rise
-        onStarted: { popup.opacity = 1; popup.visible = true }
-        onFinished: popup.visible = false
-        NumberAnimation { target: popup; property: "y"; from: popup.startY; to: popup.startY - 60; duration: 950; easing.type: Easing.OutCubic }
-        SequentialAnimation {
-          NumberAnimation { target: popup; property: "scale"; from: 0.5; to: 1.2; duration: 90; easing.type: Easing.OutQuad }
-          NumberAnimation { target: popup; property: "scale"; to: 1; duration: 160 }
+        ScriptAction { script: { popup.lift = 0; popup.fly = 0; popup.popScale = 0.5; popup.visible = true } }
+        ParallelAnimation {
+          NumberAnimation { target: popup; property: "lift"; to: 1; duration: 280; easing.type: Easing.OutCubic }
+          SequentialAnimation {
+            NumberAnimation { target: popup; property: "popScale"; to: 1.2; duration: 90; easing.type: Easing.OutQuad }
+            NumberAnimation { target: popup; property: "popScale"; to: 1; duration: 160 }
+          }
         }
-        SequentialAnimation {
-          PauseAnimation { duration: 500 }
-          NumberAnimation { target: popup; property: "opacity"; to: 0; duration: 450 }
-        }
+        PauseAnimation { duration: 200 }
+        ScriptAction { script: {
+          var target = hunt.scoreTarget()
+          popup.targetX = target.x; popup.targetY = target.y
+        } }
+        NumberAnimation { target: popup; property: "fly"; to: 1; duration: 320; easing.type: Easing.InQuad }
+        ScriptAction { script: popup.land() }
       }
     }
   }
@@ -601,6 +902,28 @@ Item {
         }
         Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: Math.round(hunt.shownScore) + " points"; color: hunt.ui.foreground; font.family: hunt.ui.fontFamily; font.pixelSize: 36; font.bold: true }
         Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: hunt.kills + " flies · best combo ×" + hunt.bestCombo; color: hunt.ui.tint(hunt.ui.foreground, 0.85); font.family: hunt.ui.fontFamily; font.pixelSize: 18 }
+        // The medal slams in once the score has counted up, with the next one to aim for.
+        Item {
+          width: parent.width; height: 56
+          Row {
+            anchors.centerIn: parent; spacing: 14
+            Medal { id: medalCoin; rank: Math.max(0, hunt.medal); visible: hunt.medal >= 0; width: 52; height: 52; opacity: 0 }
+            Column {
+              anchors.verticalCenter: parent.verticalCenter
+              opacity: hunt.medal >= 0 ? medalCoin.opacity : hunt.revealed ? 1 : 0
+              Text {
+                visible: hunt.medal >= 0
+                text: hunt.medal < 0 ? "" : (hunt.medal > hunt.previousMedal ? "NEW " : "") + Rules.medalNames[hunt.medal].toUpperCase() + " MEDAL"
+                color: medalCoin.faces[Math.max(0, hunt.medal)]
+                font.family: hunt.ui.fontFamily; font.pixelSize: 20; font.bold: true
+              }
+              Text {
+                text: hunt.nextMedal ? hunt.nextMedal.name + " at " + hunt.nextMedal.score : "Top medal with this weapon"
+                color: hunt.ui.muted; font.family: hunt.ui.fontFamily; font.pixelSize: 14
+              }
+            }
+          }
+        }
         // How this round compares with the weapon's previous best.
         Text {
           id: verdict
@@ -638,14 +961,21 @@ Item {
   property bool revealed: false
   SequentialAnimation {
     id: resultReveal
-    ScriptAction { script: { hunt.shownScore = 0; hunt.revealed = false; verdict.opacity = 0 } }
+    ScriptAction { script: { hunt.shownScore = 0; hunt.revealed = false; verdict.opacity = 0; medalCoin.opacity = 0; medalCoin.shine = -1 } }
     PauseAnimation { duration: 250 }
     NumberAnimation { target: hunt; property: "shownScore"; from: 0; to: hunt.score; duration: Math.min(1400, 500 + hunt.score / 40); easing.type: Easing.OutCubic }
+    ParallelAnimation {
+      NumberAnimation { target: medalCoin; property: "scale"; from: 2.8; to: 1; duration: hunt.medal >= 0 ? 210 : 0; easing.type: Easing.InQuad }
+      NumberAnimation { target: medalCoin; property: "opacity"; from: 0; to: 1; duration: hunt.medal >= 0 ? 110 : 0 }
+    }
+    ScriptAction { script: if (hunt.medal >= 0) { medalThud.stop(); medalThud.play() } }
+    PauseAnimation { duration: hunt.medal >= 0 ? 160 : 0 }
     ScriptAction { script: {
       hunt.revealed = true
       if (hunt.personalBest) { fanfare.stop(); fanfare.play(); hunt.launchConfetti() }
     } }
     ParallelAnimation {
+      NumberAnimation { target: medalCoin; property: "shine"; from: 0; to: 1; duration: hunt.medal >= 0 ? 520 : 0; easing.type: Easing.InOutQuad }
       NumberAnimation { target: verdict; property: "opacity"; from: 0; to: 1; duration: 300 }
       SequentialAnimation {
         NumberAnimation { target: resultTitle; property: "scale"; to: hunt.personalBest ? 1.3 : 1; duration: 110; easing.type: Easing.OutQuad }
@@ -739,26 +1069,97 @@ Item {
   RemoteSound { id: clockTick; audio: hunt.arena.audio; source: Qt.resolvedUrl("sounds/clock-tick.wav"); volume: 0.55 }
   RemoteSound { id: finalTick; audio: hunt.arena.audio; source: Qt.resolvedUrl("sounds/clock-tick-final.wav"); volume: 0.6 }
 
-  Item {
+  // A colour fading in from all four screen edges.
+  component EdgeShade: Item {
+    id: shade
+    property color tone
+    property real depth: 90
+    readonly property color glow: hunt.ui.tint(tone, 0.55)
+    readonly property color clear: hunt.ui.tint(tone, 0)
+    Rectangle { anchors { left: parent.left; right: parent.right; top: parent.top } height: shade.depth
+      gradient: Gradient { GradientStop { position: 0; color: shade.glow } GradientStop { position: 1; color: shade.clear } } }
+    Rectangle { anchors { left: parent.left; right: parent.right; bottom: parent.bottom } height: shade.depth
+      gradient: Gradient { GradientStop { position: 0; color: shade.clear } GradientStop { position: 1; color: shade.glow } } }
+    Rectangle { anchors { top: parent.top; bottom: parent.bottom; left: parent.left } width: shade.depth
+      gradient: Gradient { orientation: Gradient.Horizontal; GradientStop { position: 0; color: shade.glow } GradientStop { position: 1; color: shade.clear } } }
+    Rectangle { anchors { top: parent.top; bottom: parent.bottom; right: parent.right } width: shade.depth
+      gradient: Gradient { orientation: Gradient.Horizontal; GradientStop { position: 0; color: shade.clear } GradientStop { position: 1; color: shade.glow } } }
+  }
+  EdgeShade {
     id: edgeGlow
     anchors.fill: parent
     z: 1
     // base climbs from 0.1 at ten seconds to 1 at the last; pulse flares on each tick.
     property real base: 0
     property real pulse: 0
-    visible: !hunt.finished && !hunt.countingDown && hunt.secondsLeft <= 10 && opacity > 0
+    visible: !hunt.finished && !hunt.ending && !hunt.countingDown && hunt.secondsLeft <= 10 && opacity > 0
     opacity: Math.min(1, 0.25 + 0.45 * base + 0.4 * pulse)
-    readonly property real depth: 90 + 70 * base
-    readonly property color glow: hunt.ui.tint(hunt.ui.urgent, 0.55)
-    readonly property color clear: hunt.ui.tint(hunt.ui.urgent, 0)
-    Rectangle { anchors { left: parent.left; right: parent.right; top: parent.top } height: edgeGlow.depth
-      gradient: Gradient { GradientStop { position: 0; color: edgeGlow.glow } GradientStop { position: 1; color: edgeGlow.clear } } }
-    Rectangle { anchors { left: parent.left; right: parent.right; bottom: parent.bottom } height: edgeGlow.depth
-      gradient: Gradient { GradientStop { position: 0; color: edgeGlow.clear } GradientStop { position: 1; color: edgeGlow.glow } } }
-    Rectangle { anchors { top: parent.top; bottom: parent.bottom; left: parent.left } width: edgeGlow.depth
-      gradient: Gradient { orientation: Gradient.Horizontal; GradientStop { position: 0; color: edgeGlow.glow } GradientStop { position: 1; color: edgeGlow.clear } } }
-    Rectangle { anchors { top: parent.top; bottom: parent.bottom; right: parent.right } width: edgeGlow.depth
-      gradient: Gradient { orientation: Gradient.Horizontal; GradientStop { position: 0; color: edgeGlow.clear } GradientStop { position: 1; color: edgeGlow.glow } } }
+    tone: hunt.ui.urgent
+    depth: 90 + 70 * base
+  }
+  // Slow motion darkens the edges as time stretches.
+  EdgeShade {
+    anchors.fill: parent
+    z: 1
+    tone: hunt.ui.background
+    depth: Math.min(width, height) * 0.28
+    opacity: hunt.ending ? Math.min(1, (1 - hunt.timeScale) * 1.4) : 0
+    visible: opacity > 0
+  }
+  Text {
+    id: timeCallout
+    anchors.horizontalCenter: parent.horizontalCenter
+    y: parent.height * 0.26
+    z: 7
+    opacity: 0
+    text: "TIME!"
+    color: hunt.ui.urgent
+    style: Text.Outline; styleColor: hunt.ui.tint(hunt.ui.background, 0.85)
+    font.family: hunt.ui.fontFamily; font.pixelSize: 84; font.bold: true; font.letterSpacing: 4
+    function show() { timeCalloutPop.restart() }
+    SequentialAnimation {
+      id: timeCalloutPop
+      PropertyAction { target: timeCallout; property: "opacity"; value: 1 }
+      NumberAnimation { target: timeCallout; property: "scale"; from: 2.2; to: 1; duration: 200; easing.type: Easing.InQuad }
+      NumberAnimation { target: timeCallout; property: "scale"; to: 1.06; duration: 900 }
+      NumberAnimation { target: timeCallout; property: "opacity"; to: 0; duration: 250 }
+    }
+  }
+  // A ring closes in on the last kill when it landed right before the buzzer.
+  Item {
+    id: finalKillMark
+    z: 7
+    opacity: 0
+    // Kept on screen; the label sits under the ring, clear of the rising points.
+    function show(px, py) {
+      x = Math.max(110, Math.min(hunt.width - 110, px)); y = Math.max(80, Math.min(hunt.height - 110, py))
+      finalKillPop.restart()
+    }
+    Rectangle {
+      id: finalKillRing
+      x: -width / 2; y: -height / 2 - 10
+      width: 120; height: 120; radius: 60
+      color: "transparent"
+      border.width: 4; border.color: hunt.ui.accent
+    }
+    Text {
+      anchors.horizontalCenter: parent.horizontalCenter
+      y: 58
+      text: "FINAL KILL!"
+      color: hunt.ui.accent
+      style: Text.Outline; styleColor: hunt.ui.tint(hunt.ui.background, 0.85)
+      font.family: hunt.ui.fontFamily; font.pixelSize: 30; font.bold: true
+    }
+    SequentialAnimation {
+      id: finalKillPop
+      PropertyAction { target: finalKillMark; property: "opacity"; value: 1 }
+      ParallelAnimation {
+        NumberAnimation { target: finalKillRing; property: "scale"; from: 2.6; to: 1; duration: 260; easing.type: Easing.OutCubic }
+        NumberAnimation { target: finalKillMark; property: "scale"; from: 0.6; to: 1; duration: 260; easing.type: Easing.OutBack }
+      }
+      PauseAnimation { duration: 800 }
+      NumberAnimation { target: finalKillMark; property: "opacity"; to: 0; duration: 250 }
+    }
   }
   NumberAnimation { id: finalPulse; target: edgeGlow; property: "pulse"; from: 1; to: 0; duration: 650; easing.type: Easing.OutCubic }
 
@@ -811,7 +1212,8 @@ Item {
       Repeater {
         model: [
           "Kill as many flies as you can in " + Rules.roundSeconds + " seconds",
-          "Quick kills in a row multiply points, up to ×5"
+          "Quick kills in a row multiply points, up to ×5",
+          "Golden flies are worth ×" + Rules.goldenValue + ", but they don't stay long"
         ]
         delegate: Row {
           required property string modelData

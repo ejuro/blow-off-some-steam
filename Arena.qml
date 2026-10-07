@@ -76,6 +76,8 @@ Item {
   readonly property var flyRecords: records
   FlyRecords { id: records }
   readonly property bool roundFinished: bugHuntEnabled && !!bugLayerLoader.item && bugLayerLoader.item.finished
+  // From time's up on: the slow-motion ending, then the results. Nothing fires.
+  readonly property bool roundOver: roundFinished || (bugHuntEnabled && !!bugLayerLoader.item && bugLayerLoader.item.ending)
   readonly property bool huntBriefing: bugHuntEnabled && !!bugLayerLoader.item && bugLayerLoader.item.briefing
   function weaponNames(ids) {
     return ids.map(function(id) {
@@ -189,7 +191,7 @@ Item {
   readonly property real saberVolume: 0.3
   readonly property real saberBladeAngle: aimAngle + trickAngle
   function igniteSaber() {
-    if (!armed || roundFinished || weaponWheelOpen || weapon !== "lightsaber" || saberHeld) return false
+    if (!armed || roundOver || weaponWheelOpen || weapon !== "lightsaber" || saberHeld) return false
     if (!gunPositioned) {
       gunX = pointerX - followDistance; gunY = pointerY
       aimAngle = 0; gunPositioned = true
@@ -1114,7 +1116,7 @@ Item {
     else pistolSound.play()
   }
   function shoot(withSound) {
-    if (!armed || roundFinished) return false
+    if (!armed || roundOver) return false
     if (weapon === "lightsaber") return igniteSaber()
     if (weapon === "bazooka") {
       // Reject extra clicks before sound, recoil, flash, or particle creation.
@@ -1772,7 +1774,7 @@ Item {
     interval: 190
     repeat: false
     onTriggered: {
-      if (root.roundFinished) return
+      if (root.roundOver) return
       root.automaticHoldEngaged = true
       root.shoot(false)
       if (root.weapon === "mp5a3") mp5AutomaticSound.play()
@@ -2173,8 +2175,10 @@ Item {
       var elapsed = Math.min(frameTime, 0.064)
       root.advanceWeapon(elapsed)
       root.advanceSaber(elapsed)
-      // Fly Hunt hit-stop holds projectiles still for a moment after a kill.
-      if (!(root.bugHuntEnabled && bugLayerLoader.item && bugLayerLoader.item.hitStop > 0)) root.simulationAccumulator += elapsed
+      // Fly Hunt hit-stop holds projectiles still for a moment after a kill,
+      // and the time's-up slow motion slows them with the flies.
+      var hunt = root.bugHuntEnabled ? bugLayerLoader.item : null
+      if (!(hunt && hunt.hitStop > 0)) root.simulationAccumulator += elapsed * (hunt ? hunt.timeScale : 1)
       while (root.simulationAccumulator >= 0.016) {
         root.simulateStep()
         root.simulationAccumulator -= 0.016

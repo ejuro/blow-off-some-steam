@@ -78,7 +78,17 @@ with tempfile.TemporaryDirectory(prefix="steam-fly-test-") as folder:
       Timer {
         id: expired; interval: 200
         onTriggered: {
-          check(hunt.finished && hunt.secondsLeft === 0, "timer finished the round")
+          check(hunt.ending && !hunt.finished && hunt.secondsLeft === 0 && hunt.timeScale < 1, "time's up slows down before the results")
+          check(records.records.length === 1, "saved as soon as time is up")
+          slowed.start()
+        }
+      }
+      Timer {
+        id: slowed; interval: 1500
+        onTriggered: {
+          check(hunt.finished && !hunt.ending && hunt.timeScale === 1 && hunt.secondsLeft === 0, "timer finished the round")
+          check(hunt.bankedScore === hunt.score, "every point landed in the HUD")
+          check(hunt.medal === -1 && hunt.nextMedal.name === "Bronze" && hunt.nextMedal.score === 4000, "2000 with the Glock earns no medal yet")
           hunt.finishRound()
           check(records.records.length === 1, "saved exactly once")
           check(hunt.personalBest && !hunt.revealed, "first round is a best, revealed after the count-up")

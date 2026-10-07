@@ -8,6 +8,10 @@ in it keep their relative loudness:
   clock-tick.wav         last-ten-seconds ticks from 10 down to 4
   clock-tick-final.wav   the urgent ticks for the last three seconds
   new-best-fanfare.wav   a rising arpeggio into a held chord for a new best
+  golden-chime.wav       a quick sparkling bell run when a golden fly appears
+  golden-kill.wav        a "cha-ching": a noise swipe, two bright bell hits and a coin jingle
+  medal-thud.wav         a medal slamming onto the results card: low thump and a metal ring
+  slowmo.wav             time's up: a low boom and a tone sliding down under a falling whoosh
   silence.wav            half a second of digital silence; the audio worker loops
                          it to keep the output device awake while it runs
 
@@ -77,6 +81,69 @@ def fanfare():
     return render(chord_start + chord_length + 0.05, sample)
 
 
+def bell(freq, t, length, brightness=1.0):
+    """Struck metal: inharmonic partials, the higher ones dying first."""
+    if t < 0 or t > length:
+        return 0.0
+    partials = [(1.0, 1.0, 1.0), (2.0, .55, .7), (2.76, .45 * brightness, .5), (5.4, .3 * brightness, .3), (8.93, .18 * brightness, .18)]
+    edge = min(1.0, t / 0.002) * min(1.0, (length - t) / 0.03)
+    return edge * sum(level * math.sin(2 * math.pi * freq * ratio * t) * math.exp(-t / (length * decay * 0.45))
+                      for ratio, level, decay in partials)
+
+
+def golden_chime():
+    steps = [(0.00, 84), (0.05, 88), (0.10, 91), (0.15, 96), (0.22, 100)]
+    return render(0.85, lambda t: sum(bell(note(m), t - start, 0.6) for start, m in steps))
+
+
+def golden_kill():
+    rng = random.Random(11)
+    jingles = [(0.22 + rng.random() * 0.45, 2600 + rng.random() * 2600) for _ in range(9)]
+    state = {'last': 0.0}
+
+    def sample(t):
+        # The "cha": bright noise (differenced to tilt it high), gone in 60 ms.
+        noise = rng.uniform(-1, 1)
+        swipe = (noise - state['last']) * 0.35 * math.exp(-t / 0.02) if t < 0.07 else 0.0
+        state['last'] = noise
+        ching = bell(1580, t - 0.07, 0.75, 1.3) + 0.9 * bell(2370, t - 0.15, 0.7, 1.3)
+        coins = sum(0.18 * bell(f, t - start, 0.18, 0.6) for start, f in jingles)
+        return swipe + ching + coins
+    return render(1.0, sample)
+
+
+def medal_thud():
+    rng = random.Random(21)
+
+    def sample(t):
+        # Pitch drops as the thump decays, like a heavy object landing.
+        thump = math.sin(2 * math.pi * (75 * t - 12 * t * t)) * math.exp(-t / 0.09) * 1.4
+        knock = rng.uniform(-1, 1) * math.exp(-t / 0.006) * 0.5
+        ring = 0.45 * bell(880, t - 0.005, 0.9, 0.9) + 0.25 * bell(1320, t - 0.005, 0.7, 0.8)
+        return thump + knock + ring
+    return render(1.0, sample)
+
+
+def slowmo():
+    rng = random.Random(31)
+    state = {'low': 0.0, 'phase': 0.0}
+    length = 1.35
+
+    def sample(t):
+        # A low boom, then a tone gliding from 330 Hz down to 50 Hz.
+        boom = math.sin(2 * math.pi * 48 * t) * math.exp(-t / 0.25) * 0.9
+        freq = 50 + 280 * math.exp(-t / 0.35)
+        state['phase'] += 2 * math.pi * freq / RATE
+        p = state['phase']
+        glide = (math.sin(p) + 0.3 * math.sin(2 * p) + 0.12 * math.sin(3 * p)) * 0.45 * math.exp(-t / 0.9)
+        # Noise through a low-pass whose cutoff falls with the glide: the whoosh.
+        cutoff = 0.02 + 0.25 * math.exp(-t / 0.3)
+        state['low'] += cutoff * (rng.uniform(-1, 1) - state['low'])
+        whoosh = state['low'] * 1.6 * min(1.0, t / 0.04) * math.exp(-t / 0.6)
+        return (boom + glide + whoosh) * min(1.0, (length - t) / 0.15)
+    return render(length, sample)
+
+
 def write(effects):
     scale = .89 * 32767 / max(abs(s) for samples in effects.values() for s in samples)
     for name, samples in effects.items():
@@ -96,6 +163,9 @@ write({
     'clock-tick-final.wav': tick(6, [(2600, 1, .024), (4100, .5, .012), (1300, .35, .03)], .12, .8),
 })
 write({'new-best-fanfare.wav': fanfare()})
+write({'golden-chime.wav': [v * .7 for v in golden_chime()], 'golden-kill.wav': golden_kill()})
+write({'medal-thud.wav': medal_thud()})
+write({'slowmo.wav': slowmo()})
 with wave.open(str(SOUNDS / 'silence.wav'), 'wb') as output:
     output.setparams((1, 2, RATE, 0, 'NONE', 'not compressed'))
     output.writeframes(b'\0\0' * (RATE // 2))

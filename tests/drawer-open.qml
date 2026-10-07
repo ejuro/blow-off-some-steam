@@ -56,6 +56,11 @@ ShellRoot {
   } }
   Timer { id: late; interval: 50; onTriggered: {
     check(!drawer.opened && !drawer.doorsOpen, "a quick open and close leaves the doors shut")
+    // In Fly Hunt a weapon's card shows the medal its best has earned (52000 with the saber: platinum).
+    check(drawer.medalRank("lightsaber") === 3, "card shows the saber's medal")
+    check(drawer.medalRank("glock") === -1, "no medal without a best")
+    fake.setMode("free")
+    check(drawer.medalRank("lightsaber") === -1, "medals only show in Fly Hunt")
     console.log("DRAWER_OPEN_OK"); Qt.quit()
   } }
 }

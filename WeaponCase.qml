@@ -1,6 +1,7 @@
 import QtQuick
 import qs.Commons
 import qs.Ui
+import "FlyRound.js" as Rules
 
 Panel {
   id: root
@@ -58,6 +59,11 @@ Panel {
   function playWeaponHover() {
     weaponHoverSound.stop()
     weaponHoverSound.play()
+  }
+  // The medal a weapon's Fly Hunt best has earned (-1 for none); shown only in Fly Hunt.
+  function medalRank(id) {
+    var best = mode === "hunt" ? bests[id] : null
+    return best ? Rules.medal(id, best.score) : -1
   }
   function toggleSound() {
     if (!arena) return
@@ -145,6 +151,14 @@ Panel {
         font.family: card.ui.fontFamily
         font.pixelSize: Style.font.caption
       }
+    }
+    // In Fly Hunt, the medal this weapon's best has earned sits in the corner.
+    Medal {
+      rank: card.ui.medalRank(card.weaponId)
+      visible: rank >= 0
+      anchors.left: parent.left; anchors.bottom: parent.bottom
+      anchors.margins: Style.space(6)
+      width: Style.space(14); height: width
     }
     MouseArea {
       id: hover

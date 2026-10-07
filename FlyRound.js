@@ -10,13 +10,15 @@ function fresh(now, weapon) {
 var comboWindows = [1800, 1800, 1500, 1250, 1050, 900]
 function comboWindow(combo) { return comboWindows[Math.max(0, Math.min(5, combo))] }
 function remaining(round, now) { return Math.max(0, Math.ceil((round.deadline - now) / 1000)) }
-function kill(round, now) {
+// A golden fly is worth `goldenValue` times a normal kill at the same combo.
+var goldenValue = 3
+function kill(round, now, golden) {
   if (round.finished || now >= round.deadline) return false
   round.combo = round.lastKill !== null && now - round.lastKill <= comboWindow(round.combo)
     ? Math.min(5, round.combo + 1) : 1
   round.lastKill = now
   round.kills++
-  round.score += 100 * round.combo
+  round.score += 100 * round.combo * (golden ? goldenValue : 1)
   round.bestCombo = Math.max(round.bestCombo, round.combo)
   return true
 }
@@ -76,4 +78,30 @@ function restore(text) {
     if (Number.isInteger(r.seconds) && r.seconds > 0 && r.seconds <= 600) record.seconds = r.seconds
     return record
   }))
+}
+// Medal scores per weapon (bronze, silver, gold, platinum). Slow or
+// one-shot weapons score less in a round, so each has its own ladder.
+var medalNames = ["Bronze", "Silver", "Gold", "Platinum"]
+var medalScores = {
+  glock: [4000, 9000, 14000, 20000],
+  revolver: [5000, 12000, 18000, 25000],
+  mp5a3: [6000, 15000, 22000, 30000],
+  ak47: [7000, 15000, 24000, 32000],
+  bazooka: [2500, 6000, 10000, 15000],
+  lightsaber: [8000, 16000, 26000, 36000]
+}
+// 0 bronze … 3 platinum, or -1 below bronze (or an unknown weapon).
+function medal(weapon, score) {
+  var ladder = medalScores[weapon]
+  if (!ladder) return -1
+  var earned = -1
+  for (var i = 0; i < ladder.length; i++) if (score >= ladder[i]) earned = i
+  return earned
+}
+// The next medal up and the score it needs, or null after platinum.
+function nextMedal(weapon, score) {
+  var ladder = medalScores[weapon]
+  if (!ladder) return null
+  var next = medal(weapon, score) + 1
+  return next < ladder.length ? { medal: next, name: medalNames[next], score: ladder[next] } : null
 }

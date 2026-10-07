@@ -71,4 +71,23 @@ const bests = rules.bests(legacy);
 assert.deepEqual(Object.keys(bests).sort(), ['ak47', 'glock'], 'only 40-second rounds count');
 assert.equal(bests.ak47.score, 900);
 assert.equal(bests.glock.score, 800);
-console.log('Fly Hunt rules: scoring, combos, cutoff, multi-kills, replay, per-weapon records passed.');
+// A golden fly triples the kill at its combo and still feeds the combo.
+const golden = rules.fresh(0, 'glock');
+rules.kill(golden, 0);
+rules.kill(golden, 100, true);
+assert.equal(golden.score, 100 + 600);
+assert.equal(golden.combo, 2);
+// Medals: each weapon has its own ladder; below bronze is -1.
+assert.equal(rules.medal('glock', 3999), -1);
+assert.equal(rules.medal('glock', 4000), 0);
+assert.equal(rules.medal('glock', 20000), 3);
+assert.equal(rules.medal('ray-pistol', 99999), -1);
+for (const id of rules.weaponIds) {
+  const ladder = rules.medalScores[id];
+  assert.equal(ladder.length, 4, id);
+  assert.ok(ladder.every((score, i) => i === 0 || score > ladder[i - 1]), id + ' ladder climbs');
+}
+assert.deepEqual({...rules.nextMedal('ak47', 20800)}, {medal: 2, name: 'Gold', score: 24000});
+assert.equal(rules.nextMedal('ak47', 1).name, 'Bronze');
+assert.equal(rules.nextMedal('ak47', 40000), null);
+console.log('Fly Hunt rules: scoring, combos, golden flies, medals, cutoff, multi-kills, replay, per-weapon records passed.');
