@@ -162,7 +162,7 @@ Item {
   // Share of the bullet-time allowance left; drives the LAST SHOT bar.
   property real lastShotLeft: 0
   function beginLastShot() {
-    if (lastShot || ending || finished) return
+    if (lastShot || ending || finished || briefing || countingDown) return
     lastShot = true
     secondsLeft = 0
     hitStop = 0
@@ -246,8 +246,9 @@ Item {
   Timer {
     interval: 50; running: !hunt.finished; repeat: true
     onTriggered: {
-      // The combo clock stops at the buzzer, through bullet time.
-      if (hunt.countingDown || hunt.lastShot || hunt.ending) return
+      // The round clock waits on the briefing and countdown (the round is
+      // replaced at GO); the combo clock stops at the buzzer, through bullet time.
+      if (hunt.briefing || hunt.countingDown || hunt.lastShot || hunt.ending) return
       var now = Date.now()
       hunt.secondsLeft = Rules.remaining(hunt.round, now)
       if (hunt.combo > 0 && hunt.round.lastKill !== null && now - hunt.round.lastKill > Rules.comboWindow(hunt.round.combo)) hunt.breakCombo()

@@ -172,4 +172,46 @@ with tempfile.TemporaryDirectory(prefix="steam-fly-test-") as folder:
         console.log("TIMEOUT_OK"); Qt.quit()
       } }
     }''', "TIMEOUT_OK")
+    # Waiting on the briefing card longer than a round must not run the round.
+    run('''ShellRoot {
+      Steam.FlyRecords { id: records }
+      Item {
+        id: fake
+        property bool armed: false
+        property var audio: null
+        property color accent: "#55ddbb"
+        property color foreground: "#e0e0e0"
+        property color background: "#101315"
+        property color muted: "#707880"
+        property color urgent: "#a55555"
+        property string fontFamily: "monospace"
+        property int cornerRadius: 0
+        property string weapon: "glock"
+        function tint(color, alpha) { return Qt.rgba(color.r, color.g, color.b, alpha) }
+        property var flyRecords: records
+        function clearRoundEffects() {}
+        function weaponNames(ids) { return ids.join(" · ") }
+        function holster() {}
+      }
+      Steam.BugHuntLayer { id: hunt; width: 1280; height: 720; arena: fake }
+      property int savedBefore: 0
+      function check(ok, message) { if (!ok) throw new Error(message) }
+      Timer { interval: 250; running: true; onTriggered: {
+        check(hunt.briefing && records.ready, "opens on the briefing")
+        savedBefore = records.records.length
+        // As if the card had been up for the whole 40 s.
+        hunt.round.deadline = Date.now() - 1
+        waited.start()
+      } }
+      Timer { id: waited; interval: 300; onTriggered: {
+        check(!hunt.lastShot && !hunt.ending && !hunt.finished && hunt.secondsLeft === 40, "the clock waits on the briefing: " + hunt.secondsLeft)
+        check(records.records.length === savedBefore, "nothing saved from the briefing")
+        hunt.startCountdown()
+        started.start()
+      } }
+      Timer { id: started; interval: 2300; onTriggered: {
+        check(!hunt.countingDown && !hunt.lastShot && hunt.acceptHits() && hunt.round.deadline - Date.now() > 35000, "GO starts a full round")
+        console.log("BRIEFING_OK"); Qt.quit()
+      } }
+    }''', "BRIEFING_OK")
 print("QML round timer, bullet-time final kill and timeout, late hits, replay, abandoned round, and records reload passed.")
