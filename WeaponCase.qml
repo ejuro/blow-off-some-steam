@@ -309,47 +309,52 @@ Panel {
           id: content
           width: parent.width
           spacing: Style.space(12)
-          Item {
+          // Title and tagline sit close together, apart from the sections below.
+          Column {
             width: parent.width
-            height: Math.max(title.implicitHeight, soundButton.height)
-            Text {
-              id: title
-              anchors.centerIn: parent
-              text: "BLOW OFF SOME STEAM"
-              color: root.foreground
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.heading
-              font.bold: true
-              font.letterSpacing: 1.5
-            }
-            // Sound on/off; remembered between sessions.
-            MenuButton {
-              id: soundButton
-              objectName: "soundButton"
-              ui: root
-              anchors.right: parent.right
-              anchors.verticalCenter: parent.verticalCenter
-              width: Style.space(28); height: Style.space(28)
-              Accessible.name: root.soundMuted ? "Turn sound on" : "Mute sound"
-              onClicked: root.toggleSound()
+            spacing: Style.space(2)
+            Item {
+              width: parent.width
+              height: Math.max(title.implicitHeight, soundButton.height)
               Text {
+                id: title
                 anchors.centerIn: parent
-                text: root.soundMuted ? "󰖁" : "󰕾"
-                color: root.soundMuted ? Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.5) : root.foreground
+                text: "BLOW OFF SOME STEAM"
+                color: root.foreground
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.heading
+                font.bold: true
+                font.letterSpacing: 1.5
+              }
+              // Sound on/off; remembered between sessions.
+              MenuButton {
+                id: soundButton
+                objectName: "soundButton"
+                ui: root
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                width: Style.space(28); height: Style.space(28)
+                Accessible.name: root.soundMuted ? "Turn sound on" : "Mute sound"
+                onClicked: root.toggleSound()
+                Text {
+                  anchors.centerIn: parent
+                  text: root.soundMuted ? "󰖁" : "󰕾"
+                  color: root.soundMuted ? Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.5) : root.foreground
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.heading
+                }
               }
             }
-          }
-          // The tagline never changes; each section says what to do in it.
-          Text {
-            width: parent.width
-            horizontalAlignment: Text.AlignHCenter
-            wrapMode: Text.WordWrap
-            text: "Stress relief, now with\nrockets and lightsabers"
-            color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.55)
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
+            // The tagline never changes; each section says what to do in it.
+            Text {
+              width: parent.width
+              horizontalAlignment: Text.AlignHCenter
+              wrapMode: Text.WordWrap
+              text: "Stress relief, now with\nrockets and lightsabers"
+              color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.55)
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+            }
           }
           Row {
             width: parent.width; spacing: Style.space(8)
