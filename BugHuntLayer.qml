@@ -40,14 +40,14 @@ Item {
   property real lastKillTime: 0
   property real lastKillX: 0
   property real lastKillY: 0
-  // The HUD score fills as each kill's points fly up and land in it.
-  property int bankedScore: 0
+  // The HUD score counts up to each new total instead of jumping to it;
+  // a reset to zero is instant.
   property real hudScore: 0
-  Behavior on hudScore { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
-  function bank(points) {
-    bankedScore += points
-    hudScore = bankedScore
-    scorePunch.restart()
+  Behavior on hudScore { id: countUp; NumberAnimation { duration: 420; easing.type: Easing.OutCubic } }
+  onScoreChanged: {
+    countUp.enabled = score > 0
+    hudScore = score
+    if (score > 0) scorePunch.restart()
   }
   // This round's medal (-1 for none), the weapon's medal before it, and the next one up.
   property int medal: -1
@@ -161,8 +161,6 @@ Item {
   }
   function showResults() {
     ending = false; timeScale = 1; trauma = 0
-    for (var k = 0; k < popups.count; k++) popups.itemAt(k).stop()
-    hudScore = bankedScore = score
     finished = true
     resultReveal.restart()
   }
@@ -182,7 +180,7 @@ Item {
     for (var d = 0; d < droplets.count; d++) droplets.itemAt(d).active = false
     resultReveal.stop(); shownScore = 0; revealed = false
     slowMotion.stop(); ending = false; timeScale = 1; lastKillTime = 0
-    bankedScore = 0; hudScore = 0; medal = -1; previousMedal = -1; nextMedal = null
+    medal = -1; previousMedal = -1; nextMedal = null
     medalCoin.opacity = 0; medalCoin.shine = -1
     for (var w = 0; w < wings.count; w++) wings.itemAt(w).active = false
     for (var g = 0; g < coins.count; g++) coins.itemAt(g).active = false
@@ -808,9 +806,7 @@ Item {
     }
   }
 
-  // "+points ×combo" pops up at each kill, then flies into the HUD score,
-  // which takes the points only when they land.
-  function scoreTarget() { return scoreValue.mapToItem(hunt, scoreValue.width - 18, scoreValue.height / 2) }
+  // Floating "+points ×combo" at each kill.
   Repeater {
     id: popups
     model: 12
@@ -819,33 +815,15 @@ Item {
       property int points: 0
       property int multiplier: 1
       property bool golden: false
-      // Points not yet banked into the HUD score.
-      property bool pending: false
-      property real startX: 0
       property real startY: 0
-      property real targetX: 0
-      property real targetY: 0
-      property real lift: 0
-      property real fly: 0
-      property real popScale: 1
       visible: false
       z: 5
-      x: startX + (targetX - startX) * fly
-      readonly property real risenY: startY - 50 * lift
-      y: risenY + (targetY - risenY) * fly
-      scale: popScale * (1 - 0.5 * fly)
       function start(px, py, gained, combo, isGolden) {
-        land()
         points = gained; multiplier = combo; golden = !!isGolden
-        startX = px; startY = py - 34; targetX = px; targetY = py
-        pending = true
+        x = px; startY = py - 34
         rise.restart()
       }
-      function land() {
-        if (pending) { pending = false; hunt.bank(points) }
-        visible = false
-      }
-      function stop() { rise.stop(); pending = false; visible = false }
+      function stop() { rise.stop(); visible = false }
       Row {
         x: -width / 2; y: -height / 2
         spacing: 5
@@ -864,23 +842,19 @@ Item {
           font.family: hunt.ui.fontFamily; font.pixelSize: 15; font.bold: true
         }
       }
-      SequentialAnimation {
+      ParallelAnimation {
         id: rise
-        ScriptAction { script: { popup.lift = 0; popup.fly = 0; popup.popScale = 0.5; popup.visible = true } }
-        ParallelAnimation {
-          NumberAnimation { target: popup; property: "lift"; to: 1; duration: 280; easing.type: Easing.OutCubic }
-          SequentialAnimation {
-            NumberAnimation { target: popup; property: "popScale"; to: 1.2; duration: 90; easing.type: Easing.OutQuad }
-            NumberAnimation { target: popup; property: "popScale"; to: 1; duration: 160 }
-          }
+        onStarted: { popup.opacity = 1; popup.visible = true }
+        onFinished: popup.visible = false
+        NumberAnimation { target: popup; property: "y"; from: popup.startY; to: popup.startY - 60; duration: 950; easing.type: Easing.OutCubic }
+        SequentialAnimation {
+          NumberAnimation { target: popup; property: "scale"; from: 0.5; to: 1.2; duration: 90; easing.type: Easing.OutQuad }
+          NumberAnimation { target: popup; property: "scale"; to: 1; duration: 160 }
         }
-        PauseAnimation { duration: 200 }
-        ScriptAction { script: {
-          var target = hunt.scoreTarget()
-          popup.targetX = target.x; popup.targetY = target.y
-        } }
-        NumberAnimation { target: popup; property: "fly"; to: 1; duration: 320; easing.type: Easing.InQuad }
-        ScriptAction { script: popup.land() }
+        SequentialAnimation {
+          PauseAnimation { duration: 500 }
+          NumberAnimation { target: popup; property: "opacity"; to: 0; duration: 450 }
+        }
       }
     }
   }

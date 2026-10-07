@@ -87,7 +87,7 @@ with tempfile.TemporaryDirectory(prefix="steam-fly-test-") as folder:
         id: slowed; interval: 1500
         onTriggered: {
           check(hunt.finished && !hunt.ending && hunt.timeScale === 1 && hunt.secondsLeft === 0, "timer finished the round")
-          check(hunt.bankedScore === hunt.score, "every point landed in the HUD")
+          check(Math.round(hunt.hudScore) === hunt.score, "the HUD score counted up to the total")
           check(hunt.medal === -1 && hunt.nextMedal.name === "Bronze" && hunt.nextMedal.score === 4000, "2000 with the Glock earns no medal yet")
           hunt.finishRound()
           check(records.records.length === 1, "saved exactly once")
