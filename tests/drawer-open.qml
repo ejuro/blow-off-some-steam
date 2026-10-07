@@ -57,6 +57,14 @@ ShellRoot {
   Timer { id: late; interval: 50; onTriggered: {
     check(!drawer.opened && !drawer.doorsOpen, "a quick open and close leaves the doors shut")
     // In Fly Hunt a weapon's card shows the medal its best has earned (52000 with the saber: platinum).
+    // The ? button opens How to play; opening the drawer again starts on the main page.
+    drawer.toggleHelp()
+    check(drawer.helpOpen, "? opens How to play")
+    drawer.toggleHelp()
+    check(!drawer.helpOpen, "← goes back")
+    drawer.toggleHelp(); drawer.open()
+    check(!drawer.helpOpen, "the drawer opens on the main page")
+    drawer.close()
     check(drawer.medalRank("lightsaber") === 3, "card shows the saber's medal")
     check(drawer.medalRank("glock") === -1, "no medal without a best")
     fake.setMode("free")
