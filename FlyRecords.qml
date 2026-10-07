@@ -31,15 +31,32 @@ Item {
     else flush()
   }
   function flush() {
-    if (ready) file.setText(JSON.stringify({ version: 1, records: records }) + "\n")
+    // No path: the saved file was too large to read, so it is left alone.
+    if (ready && file.path.length) file.setText(JSON.stringify({ version: 1, records: records }) + "\n")
   }
+  readonly property string recordsPath: stateRoot + "/fly-records.json"
+  // A normal file is a few kilobytes (the top 20 per weapon). One far bigger
+  // is not read into the shell, nor overwritten, in case it matters to someone.
+  readonly property int maximumBytes: 1048576
   // Same cleared, fixed environment as the other desktop helpers.
   DesktopProcess {
     id: directory
     command: ["/usr/bin/mkdir", "-p", "--", root.stateRoot]
     onExited: function(code) {
-      if (code === 0) file.path = root.stateRoot + "/fly-records.json"
+      if (code === 0) sizeCheck.running = true
       else root.error = "Records cannot be saved on this device."
+    }
+  }
+  DesktopProcess {
+    id: sizeCheck
+    command: ["/usr/bin/stat", "-L", "-c", "%s", "--", root.recordsPath]
+    stdout: StdioCollector { id: size; waitForEnd: true }
+    onExited: function(code) {
+      // No file yet (stat fails) is fine: FileView starts a new one.
+      if (code === 0 && !(Number(size.text.trim()) <= root.maximumBytes)) {
+        root.error = "Saved records are too large to read: " + root.recordsPath
+        root.load("")
+      } else file.path = root.recordsPath
     }
   }
   FileView {

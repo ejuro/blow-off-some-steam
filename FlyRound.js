@@ -77,11 +77,12 @@ function ranked(records) {
 function restore(text) {
   var data = JSON.parse(text)
   if (data.version !== 1 || !Array.isArray(data.records)) throw new Error("Invalid records")
-  return ranked(data.records.filter(function(r) {
+  // The game keeps at most 20 per weapon, so a few thousand is already far more than a real file.
+  return ranked(data.records.slice(0, 5000).filter(function(r) {
     return r && Number.isInteger(r.score) && r.score >= 0 && r.score <= 100000000
       && Number.isInteger(r.kills) && r.kills >= 0 && r.kills <= 1000000
       && Number.isInteger(r.bestCombo) && r.bestCombo >= 0 && r.bestCombo <= 5
-      && typeof r.date === "string" && isFinite(Date.parse(r.date))
+      && typeof r.date === "string" && r.date.length <= 40 && isFinite(Date.parse(r.date))
       && Array.isArray(r.weapons) && r.weapons.length <= 16
       && r.weapons.every(function(w) { return typeof w === "string" })
   }).map(function(r) {

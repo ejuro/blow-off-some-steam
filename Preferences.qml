@@ -26,11 +26,27 @@ Item {
     else changedBeforeLoad = true
   }
   function save() { file.setText(JSON.stringify({ version: 1, muted: muted }) + "\n") }
+  readonly property string settingsPath: stateRoot + "/settings.json"
   // Same cleared, fixed environment as the other desktop helpers.
   DesktopProcess {
     id: directory
     command: ["/usr/bin/mkdir", "-p", "--", root.stateRoot]
-    onExited: function(code) { if (code === 0) file.path = root.stateRoot + "/settings.json" }
+    onExited: function(code) { if (code === 0) sizeCheck.running = true }
+  }
+  // The file holds one switch. One much bigger than that is not read into
+  // the shell; the defaults apply and the next change replaces it.
+  DesktopProcess {
+    id: sizeCheck
+    command: ["/usr/bin/stat", "-L", "-c", "%s", "--", root.settingsPath]
+    stdout: StdioCollector { id: size; waitForEnd: true }
+    onExited: function(code) {
+      if (code === 0 && !(Number(size.text.trim()) <= 4096)) {
+        // Still the place to save to, but never read.
+        file.preload = false
+        root.load("")
+      }
+      file.path = root.settingsPath
+    }
   }
   FileView {
     id: file
