@@ -111,15 +111,19 @@ function bridge(base, other, path, from, to, sameWinding) {
 // runs from that point through path[index + 1 …]. It closes by crossing an
 // earlier segment, or by coming back within `snap` px of an earlier point that
 // is at least `travel` px back along the path (a spin ends where it started).
+// Of several crossings, the nearest along the newest segment closes the
+// smallest loop, the only one sure not to cross itself.
 function selfCrossing(path, snap, travel) {
   var n = path.length
   if (n < 4) return null
   var p = path[n - 2], q = path[n - 1]
+  var nearest = null
   for (var i = 0; i < n - 3; i++) {
     var hit = cross(p, q, path[i], path[i + 1])
-    if (hit && hit.t >= -1e-9 && hit.t <= 1 + 1e-9)
-      return {index: i, x: p.x + (q.x - p.x) * hit.t, y: p.y + (q.y - p.y) * hit.t}
+    if (hit && hit.t >= -1e-9 && hit.t <= 1 + 1e-9 && (!nearest || hit.t < nearest.t))
+      nearest = {index: i, t: hit.t, x: p.x + (q.x - p.x) * hit.t, y: p.y + (q.y - p.y) * hit.t}
   }
+  if (nearest) return nearest
   if (!snap) return null
   var along = 0
   for (var k = n - 2; k >= 0; k--) {
@@ -129,6 +133,16 @@ function selfCrossing(path, snap, travel) {
   }
   return null
 }
+// Whether a hole lies inside a shape. Holes never cross a shape's edge, but
+// one may touch it at a corner, so go by most of its corners, not just one.
+function encloses(poly, hole) {
+  var inside = 0
+  for (var i = 0; i < hole.length; i++) if (contains(poly, hole[i].x, hole[i].y)) inside++
+  return inside * 2 > hole.length
+}
+// Whether two areas match, give or take rounding. A split checks its
+// pieces against what it split; a path that left the shape fails this.
+function sameArea(a, b) { return Math.abs(a - b) <= 0.5 + Math.max(a, b) * 1e-6 }
 function translate(poly, dx, dy) { return poly.map(function(v) { return {x: v.x + dx, y: v.y + dy} }) }
 function path(c, poly, dx, dy) {
   c.beginPath()

@@ -135,6 +135,30 @@ ShellRoot {
     check(arena.destructibles[2].destroyed && !arena.destructibles[1].destroyed, "a sliver under 2500 px² falls")
     arena.cancelSaber()
     check(arena.saberHeat.length === 0, "putting the saber away clears the glow")
+
+    // Strokes found by an adversarial search (a 600 × 600 window at 200, 200):
+    // a last step that crosses the stroke on its way out, a tip that starts
+    // exactly on a corner of a notch, and a hole touching the outline at a
+    // corner. None may leave a window with more solid area than before.
+    var degenerate = [
+      [[-100, 300], [500, 500], [100, 400], [-100, 100]],
+      [[-100, 300], [500, 200], [300, 400], [600, 300], [0, 0]],
+      [[100, -100], [200, 400], [500, 700], [300, 400], [0, 0], [700, 300], [0, 700], [400, 300], [200, 200], [300, 400], [200, 0], [200, 500]]]
+    for (var c = 0; c < degenerate.length; c++) {
+      arena.cancelSaber()
+      arena.prepareDestructibles(JSON.stringify([{ address: "0xr", at: [207, 207], size: [586, 586], mapped: true, workspace: { id: 1 } }]))
+      var shape = arena.destructibles[1]
+      var solidArea = function() { return shape.destroyed ? 0 : area(shape.poly) - shape.holes.reduce(function(sum, hole) { return sum + area(hole) }, 0) }
+      var last = solidArea()
+      for (var step = 1; step < degenerate[c].length; step++) {
+        var from = degenerate[c][step - 1], to = degenerate[c][step]
+        arena.saberCutDesktop({ tip: { x: from[0] + 200, y: from[1] + 200 } }, { tip: { x: to[0] + 200, y: to[1] + 200 } })
+        shape = arena.destructibles[1]
+        check(solidArea() <= last + 0.01, "degenerate stroke " + c + " grew the window at step " + step + ": " + last + " → " + solidArea())
+        last = solidArea()
+      }
+    }
+    check(area(arena.destructibles[1].poly) < 360000, "the degenerate strokes still cut")
     console.log("ARENA_CUT_OK"); done.start()
   } }
   Timer { id: done; interval: 150; onTriggered: Qt.quit() }

@@ -301,7 +301,14 @@ Item {
         if (inside) {
           burnGroove(region, cursor, point); contact = point
           stroke.path.push(point)
-          if (cutThrough(region, stroke, hit)) {
+          // A last step that crosses the stroke closes a loop first; that hole
+          // falls, and the rest of the stroke (now simple) splits the window.
+          var exitRing = loops[hit.loop]
+          var holed = closeLoops(region, stroke, false)
+          // A new hole can renumber the holes, so find the exit's loop again.
+          var exit = holed ? Object.assign({}, hit, {loop: regionLoops(region).indexOf(exitRing)}) : hit
+          var split = !region.destroyed && exit.loop >= 0 && cutThrough(region, stroke, exit)
+          if (holed || split) {
             changed = true
             if (region.destroyed) break
             // The shape changed under the blade, so find the rest of this sweep's crossings again.
@@ -331,17 +338,29 @@ Item {
     path.push(point)
     // Very long strokes forget their start; an edge-to-edge cut then needs a fresh entry.
     if (path.length > 900) { stroke.path = path = path.slice(path.length - 600); stroke.entry = null }
-    var crossing = Cut.selfCrossing(path, 8, 50)
-    if (!crossing) return false
-    var corner = {x: crossing.x, y: crossing.y}
-    var loop = [corner].concat(path.slice(crossing.index + 1, path.length - 1))
-    stroke.path = path.slice(0, crossing.index + 1).concat([corner, point])
-    return cutHole(region, loop)
+    return closeLoops(region, stroke, true)
+  }
+  // Drops every loop the stroke's last step closed, nearest first, so each
+  // hole is a simple shape and what is left of the stroke never crosses
+  // itself. `snap` also closes a loop when the tip comes back next to an
+  // earlier point. Returns whether a hole fell.
+  function closeLoops(region, stroke, snap) {
+    var changed = false
+    // Each pass shortens the path, so this ends.
+    for (var crossing = Cut.selfCrossing(stroke.path, snap ? 8 : 0, 50); crossing && !region.destroyed;
+         crossing = Cut.selfCrossing(stroke.path, 0, 50)) {
+      var path = stroke.path, point = path[path.length - 1]
+      var corner = {x: crossing.x, y: crossing.y}
+      var loop = [corner].concat(path.slice(crossing.index + 1, path.length - 1))
+      stroke.path = path.slice(0, crossing.index + 1).concat([corner, point])
+      if (cutHole(region, loop)) changed = true
+    }
+    return changed
   }
   function cutHole(region, loop) {
     if (Cut.area(loop) < 300) return false
     // Holes inside the new one fall out with it.
-    region.holes = region.holes.filter(function(hole) { return !Cut.contains(loop, hole[0].x, hole[0].y) })
+    region.holes = region.holes.filter(function(hole) { return !Cut.encloses(loop, hole) })
     dropPiece(region, loop, 0, (Math.random() < 0.5 ? -1 : 1) * (8 + Math.random() * 14),
               loop.concat([loop[0]]), false)
     region.holes = region.holes.concat([loop])
@@ -352,6 +371,13 @@ Item {
   // boundary (outline or hole) that is still there. Returns whether the shape changed.
   function cutThrough(region, stroke, exit) {
     if (!stroke.entry || stroke.path.length < 2) return false
+    // Only a stroke that ran through solid window may cut. A tip that starts
+    // exactly on a corner can look like an entry while it really runs outside.
+    var solidLoops = regionLoops(region)
+    for (var s = 0; s + 1 < stroke.path.length; s++) {
+      var a = stroke.path[s], b = stroke.path[s + 1]
+      if (Math.hypot(b.x - a.x, b.y - a.y) >= 0.5 && !Cut.solid(solidLoops, (a.x + b.x) / 2, (a.y + b.y) / 2)) return false
+    }
     var from = regionLoops(region).indexOf(stroke.entry.ring)
     if (from < 0) return false
     if (from === 0 && exit.loop === 0) return cutAcross(region, stroke.path, stroke.entry, exit)
@@ -362,13 +388,14 @@ Item {
   function cutAcross(region, path, entry, exit) {
     var halves = Cut.splitAlong(region.poly, path, entry, exit)
     var areas = [Cut.area(halves[0]), Cut.area(halves[1])]
-    if (Math.min(areas[0], areas[1]) < 150) return false
+    // The two sides make up the window.
+    if (Math.min(areas[0], areas[1]) < 150 || !Cut.sameArea(areas[0] + areas[1], Cut.area(region.poly))) return false
     var piece = halves[areas[0] < areas[1] ? 0 : 1], keep = halves[areas[0] < areas[1] ? 1 : 0]
     var pieceBox = Cut.bounds(piece), keepBox = Cut.bounds(keep)
     var away = pieceBox.x + pieceBox.width / 2 >= keepBox.x + keepBox.width / 2 ? 1 : -1
     dropPiece(region, piece, away * (60 + Math.random() * 90), away * (14 + Math.random() * 22), path, false)
     region.poly = keep
-    region.holes = region.holes.filter(function(hole) { return Cut.contains(keep, hole[0].x, hole[0].y) })
+    region.holes = region.holes.filter(function(hole) { return Cut.encloses(keep, hole) })
     finishCut(region, piece)
     return true
   }
@@ -377,10 +404,11 @@ Item {
   function cutBesideHole(region, index, path, entry, exit) {
     var halves = Cut.splitAlong(region.holes[index], path, entry, exit)
     var areas = [Cut.area(halves[0]), Cut.area(halves[1])]
-    if (Math.min(areas[0], areas[1]) < 150) return false
+    // One side is the strip, the other the hole grown by it.
+    if (Math.min(areas[0], areas[1]) < 150 || !Cut.sameArea(Math.abs(areas[0] - areas[1]), Cut.area(region.holes[index]))) return false
     var piece = halves[areas[0] < areas[1] ? 0 : 1], grown = halves[areas[0] < areas[1] ? 1 : 0]
     // Holes inside the strip fall with it.
-    region.holes = region.holes.filter(function(hole, i) { return i !== index && !Cut.contains(grown, hole[0].x, hole[0].y) }).concat([grown])
+    region.holes = region.holes.filter(function(hole, i) { return i !== index && !Cut.encloses(grown, hole) }).concat([grown])
     dropPiece(region, piece, 0, (Math.random() < 0.5 ? -1 : 1) * (8 + Math.random() * 14), path, false)
     finishCut(region, piece)
     return true
