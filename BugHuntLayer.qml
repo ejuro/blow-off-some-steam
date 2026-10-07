@@ -1144,7 +1144,7 @@ Item {
   EdgeShade {
     id: edgeGlow
     anchors.fill: parent
-    z: 1
+    z: 4  // over every game piece, like the slow-motion shade below
     // base climbs from 0.1 at ten seconds to 1 at the last; pulse flares on each tick.
     property real base: 0
     property real pulse: 0
@@ -1153,10 +1153,12 @@ Item {
     tone: hunt.ui.urgent
     depth: 90 + 70 * base
   }
-  // Slow motion darkens the edges as time stretches.
+  // Slow motion darkens the edges as time stretches. It sits over every
+  // game piece (flies z 0, bodies z 2, coins z 3) so they all dim alike,
+  // under the popups and callouts.
   EdgeShade {
     anchors.fill: parent
-    z: 1
+    z: 4
     tone: hunt.ui.background
     depth: Math.min(width, height) * 0.28
     opacity: hunt.ending ? Math.min(1, (1 - hunt.timeScale) * 1.4) : 0
