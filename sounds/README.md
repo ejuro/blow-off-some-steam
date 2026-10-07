@@ -8,7 +8,6 @@ These files are WAV derivatives of sounds downloaded from Pixabay; weapon record
 - `bazooka-launch.wav` and `bazooka-explosion.wav`: launch and explosion sections from [RPG-7 Sound Effect](https://pixabay.com/sound-effects/rpg-7-sound-effect-267739/) by Sovetsky_Rastov72
 - `revolver-shot.wav`: [Single Pistol Gunshot 3.3](https://pixabay.com/sound-effects/film-special-effects-single-pistol-gunshot-33-37187/) by morganpurkis (via freesound_community)
 - `mp5-single-shot.wav`: isolated shot from [MP5](https://pixabay.com/sound-effects/mp5-168858/) by jigokukarano_sisya
-- `mp5-automatic-fire.wav`: automatic-fire section from the same MP5 recording
 - `weapon-ready.wav`: trimmed and normalized from [Load Gun sound effect 5](https://pixabay.com/sound-effects/load-gun-sound-effect-5-11003/) by beetpro
 - `window-break-1.wav` through `window-break-6.wav`: split, trimmed, and normalized variants from [Window Breaking](https://pixabay.com/sound-effects/window-breaking-105533/) by m1a2t3z4 (via freesound_community)
 - `bug-splat.wav`: full stereo recording of [Slime Impact](https://pixabay.com/sound-effects/film-special-effects-slime-impact-352473/) by Universfield, converted from the supplied MP3 to 16-bit PCM WAV at its original 48 kHz sample rate.

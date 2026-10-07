@@ -111,7 +111,7 @@ Item {
   function clearRoundEffects() {
     cancelSaber()
     automaticHoldTimer.stop(); fireTimer.stop(); burstTimer.stop(); burstCooldown.stop(); rocketCooldown.stop(); burstLeft = 0; recoilClimb = 0; sprayHeat = 0; automaticHoldEngaged = false
-    automaticSound.stop(); mp5AutomaticSound.stop()
+    automaticSound.stop()
     pistolSound.stop(); akSingleSound.stop(); mp5SingleSound.stop()
     revolverSound.stop(); bazookaLaunchSound.stop(); rocketExplosionSound.stop()
     weaponSpinSound.stop(); trickAnimation.stop(); closeWeaponWheel(false)
@@ -753,7 +753,6 @@ Item {
     fireTimer.stop()
     burstTimer.stop(); burstCooldown.stop(); rocketCooldown.stop(); burstLeft = 0; recoilClimb = 0; sprayHeat = 0
     automaticSound.stop()
-    mp5AutomaticSound.stop()
     recoil = 0
     flash = 0
     previousRecoil = 0
@@ -1130,7 +1129,6 @@ Item {
     akSingleSound.stop()
     automaticSound.stop()
     mp5SingleSound.stop()
-    mp5AutomaticSound.stop()
     revolverSound.stop()
     bazookaLaunchSound.stop()
     rocketExplosionSound.stop()
@@ -1799,7 +1797,6 @@ Item {
         automaticHoldTimer.stop()
         fireTimer.stop()
         automaticSound.stop()
-        mp5AutomaticSound.stop()
         if (pendingSingleShot) root.shoot()
       }
       onCanceled: {
@@ -1808,7 +1805,6 @@ Item {
         automaticHoldTimer.stop()
         fireTimer.stop()
         automaticSound.stop()
-        mp5AutomaticSound.stop()
       }
     }
 
@@ -1863,8 +1859,7 @@ Item {
       if (root.roundOver) return
       root.automaticHoldEngaged = true
       root.shoot(false)
-      if (root.weapon === "mp5a3") mp5AutomaticSound.play()
-      else automaticSound.play()
+      automaticSound.play()
       fireTimer.start()
     }
   }
@@ -1921,14 +1916,6 @@ Item {
     audio: root.audio
     id: mp5SingleSound
     source: Qt.resolvedUrl("sounds/mp5-single-shot.wav")
-    volume: 0.5
-  }
-
-  RemoteSound {
-    audio: root.audio
-    id: mp5AutomaticSound
-    source: Qt.resolvedUrl("sounds/mp5-automatic-fire.wav")
-    loops: RemoteSound.Infinite
     volume: 0.5
   }
 

@@ -608,7 +608,7 @@ Panel {
             SectionTitle { ui: root; text: "GAME MODES"; topPadding: Style.space(6) }
             HelpRow { ui: root; key: "Free play"; value: "No goal. Just steam." }
             HelpRow { ui: root; key: "Targets"; value: "Hit the roaming bullseye." }
-            HelpRow { ui: root; key: "Fly Hunt"; value: "40 seconds, one weapon. Quick kills build a ×5 combo, golden flies are worth ×3, and time's up ends in bullet time. Beat your best for a medal." }
+            HelpRow { ui: root; key: "Fly Hunt"; value: "40 seconds, one weapon. Quick kills build a ×5 combo, golden flies are worth ×3, and time's up ends in bullet time. Each weapon has its own bronze-to-platinum medal scores." }
             HelpRow { ui: root; key: "Destruction"; value: "Shoot, slice and blow up a frozen snapshot of your desktop." }
             Text {
               anchors.horizontalCenter: parent.horizontalCenter
