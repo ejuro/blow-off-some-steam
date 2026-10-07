@@ -3,6 +3,8 @@ import "EffectDrawing.js" as Drawing
 
 Canvas {
   id: sprite
+  property color accent: "white"
+  onAccentChanged: if (visible) requestPaint()
   property var particle: null
   property int particleIndex: 0
   property real paintAlpha: 1
@@ -48,6 +50,6 @@ Canvas {
     c.clearRect(0, 0, width, height)
     c.translate(-x, -y)
     c.globalAlpha = paintAlpha
-    Drawing.particle(c, particle, particleIndex)
+    Drawing.particle(c, particle, particleIndex, accent)
   }
 }

@@ -3,5 +3,6 @@
 
 # Local diagnostics, benchmarks, and review notes.
 /performance-review/
+
 __pycache__/
 *.pyc

@@ -1,4 +1,5 @@
 import QtQuick
+import "DesktopMarks.js" as Marks
 
 Item {
   id: terrain
@@ -70,20 +71,8 @@ Item {
           c.translate(-x, -y)
           c.drawImage(source, 0, 0, terrain.width, terrain.height)
         }
-        c.globalCompositeOperation = "destination-out"
-        for (var i = 0; i < pending.length; i++) {
-          var mark = pending[i]
-          c.save()
-          c.beginPath()
-          c.rect(mark.clipX, mark.clipY, mark.clipWidth, mark.clipHeight)
-          c.clip()
-          c.beginPath()
-          c.arc(mark.x, mark.y, mark.radius, 0, Math.PI * 2)
-          c.fill()
-          c.restore()
-        }
+        for (var i = 0; i < pending.length; i++) Marks.draw(c, pending[i], 0, 0)
         pending = []
-        c.globalCompositeOperation = "source-over"
         if (!initialized) {
           initialized = true
           terrain.readyTiles++

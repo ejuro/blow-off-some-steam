@@ -7,6 +7,10 @@ Scope {
   id: root
   property var voices: ({})
   function reply(message) { connection.write(JSON.stringify(message) + '\n'); connection.flush() }
+  // Qt 6.11: a playing SoundEffect at volume 0 (or muted) silences every other
+  // effect in the process until it is raised again; it cut the start of the
+  // saber ignition. -80 dB is inaudible and keeps the mix alive.
+  function audible(volume, music) { return music ? Math.max(0, volume) : Math.max(0.0001, volume) }
   function state(key, voice) { reply({event: 'state', key: key, status: voice.status, playing: voice.playing}) }
   function receive(line) {
     var message
@@ -28,7 +32,7 @@ Scope {
           || !message.source.startsWith(prefix)
           || !/^[A-Za-z0-9][A-Za-z0-9_-]*\.(wav|mp3)$/.test(message.source.slice(prefix.length))) return
       var component = message.music ? musicVoice : effectVoice
-      voices[key] = component.createObject(root, {voiceKey: key, source: message.source, volume: message.volume, loops: message.loops})
+      voices[key] = component.createObject(root, {voiceKey: key, source: message.source, volume: audible(message.volume, message.music), loops: message.loops})
       if (voices[key]) state(key, voices[key])
       return
     }
@@ -36,7 +40,7 @@ Scope {
     if (!voice) return
     if (message.op === 'play') voice.play()
     else if (message.op === 'stop') voice.stop()
-    else if (message.op === 'update') { voice.volume = Math.max(0, Math.min(1, message.volume)); voice.loops = message.loops }
+    else if (message.op === 'update') { voice.volume = audible(Math.min(1, message.volume), voice.isMusic); voice.loops = message.loops }
     else if (message.op === 'remove') { voice.stop(); voice.destroy(); delete voices[key] }
   }
   Socket {
@@ -44,14 +48,25 @@ Scope {
     path: Quickshell.env('STEAM_AUDIO_SOCKET')
     connected: true
     onConnectionStateChanged: {
-      if (connected) root.reply({event: 'ready'})
+      if (connected) { keepAwake.play(); root.reply({event: 'ready'}) }
       else Qt.quit()
     }
     parser: SplitParser { onRead: line => root.receive(line) }
   }
+  // Digital silence on a loop for as long as the worker runs. Many USB DACs and
+  // amps stay muted for up to a second when a stream starts on a sleeping output,
+  // which swallowed the first hover sound; this wakes the output when the case
+  // is about to open and keeps it awake. Volume must stay above 0 (see audible()).
+  SoundEffect {
+    id: keepAwake
+    source: Qt.resolvedUrl('sounds/silence.wav')
+    loops: SoundEffect.Infinite
+    volume: 1
+  }
   Component {
     id: effectVoice
     SoundEffect {
+      readonly property bool isMusic: false
       property string voiceKey
       onStatusChanged: root.state(voiceKey, this)
       onPlayingChanged: root.state(voiceKey, this)
@@ -61,6 +76,7 @@ Scope {
     id: musicVoice
     Item {
       id: music
+      readonly property bool isMusic: true
       property string voiceKey
       property alias source: player.source
       property alias volume: output.volume

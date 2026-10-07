@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.ejuro.blow-off-some-steam",
   "name": "Blow off some steam",
-  "version": "1.2.1",
+  "version": "1.3.0",
   "author": "erikrjohansson",
   "license": "MIT",
   "description": "Pick a cartoon weapon and safely wreck a frozen snapshot of your desktop.",
@@ -14,7 +14,7 @@
     "displayName": "Blow off some steam",
     "description": "A tiny weapon case for harmlessly wrecking a frozen desktop snapshot.",
     "category": "Fun",
-    "aliases": ["steam", "weapon", "particles", "pistol", "ak", "glock", "revolver", "mp5", "bazooka"],
+    "aliases": ["steam", "weapon", "particles", "pistol", "ak", "glock", "revolver", "mp5", "bazooka", "saber", "lightsaber"],
     "allowMultiple": false,
     "defaultSection": "right"
   }

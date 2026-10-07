@@ -1,5 +1,5 @@
 // Preserve the original Canvas geometry and source-over drawing order.
-function particle(c, p, i) {
+function particle(c, p, i, accent) {
   if (p.kind === 1) {
     c.fillStyle = i % 3 === 0 ? "#ff4d2e" : (i % 2 === 0 ? "#ffd24a" : "#ff8a2a")
     c.beginPath(); c.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2); c.fill()
@@ -56,7 +56,7 @@ if (root.flash > 0) {
   var cosA = Math.cos(angle)
   var sinA = Math.sin(angle)
   var localX = (root.spec.muzzleX - root.spec.gripX) * root.spec.scale
-  var localY = (root.spec.muzzleY - root.spec.gripY) * root.spec.scale * (root.aimFlipped ? -1 : 1)
+  var localY = (root.spec.muzzleY - root.spec.gripY) * root.spec.scale * root.flipScale
   var mx = root.gunX - root.recoil * cosA + localX * cosA - localY * sinA
   var my = root.gunY - root.recoil * sinA + localX * sinA + localY * cosA
   c.globalAlpha = root.flash
@@ -72,6 +72,19 @@ if (root.flash > 0) {
     c.globalAlpha = root.flash * 0.8
     c.fillStyle = "#ff762b"
     c.beginPath(); c.moveTo(0, 0); c.lineTo(27, -6); c.lineTo(20, 0); c.lineTo(28, 6); c.closePath(); c.fill()
+  } else if (root.spec.flashStyle === "ak") {
+    // A big three-pronged rifle flash with a hot core.
+    c.fillStyle = "#ffd84a"
+    c.beginPath()
+    c.moveTo(-3, 0); c.lineTo(10, -5); c.lineTo(14, -16); c.lineTo(20, -6); c.lineTo(44, 0)
+    c.lineTo(20, 6); c.lineTo(14, 16); c.lineTo(10, 5); c.closePath(); c.fill()
+    c.globalAlpha = root.flash * 0.85
+    c.fillStyle = "#fff6c8"
+    c.beginPath(); c.moveTo(0, 0); c.lineTo(16, -4); c.lineTo(28, 0); c.lineTo(16, 4); c.closePath(); c.fill()
+  } else if (root.spec.flashStyle === "mp5") {
+    // Small and tight: a short cone.
+    c.fillStyle = "#ffe98a"
+    c.beginPath(); c.moveTo(0, 0); c.lineTo(18, -5); c.lineTo(15, 0); c.lineTo(18, 5); c.closePath(); c.fill()
   } else {
     c.fillStyle = "#ffe86b"
     c.beginPath(); c.moveTo(0,0); c.lineTo(29,-10); c.lineTo(20,0); c.lineTo(33,9); c.closePath(); c.fill()
