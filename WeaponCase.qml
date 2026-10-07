@@ -200,6 +200,38 @@ Panel {
     }
   }
 
+  // A quiet icon button: just the glyph, with an outline only on hover.
+  component GhostButton: Rectangle {
+    id: ghost
+    property var ui
+    property string glyph
+    property bool dim: false
+    property int glyphSize: Style.font.body
+    signal clicked()
+    width: Style.space(26); height: Style.space(26)
+    radius: Style.cornerRadius
+    color: ghostHover.containsMouse ? Qt.rgba(ui.accent.r, ui.accent.g, ui.accent.b, 0.16) : "transparent"
+    border.width: ghostHover.containsMouse ? 1 : 0
+    border.color: ui.accent
+    Text {
+      anchors.centerIn: parent
+      text: ghost.glyph
+      color: ghostHover.containsMouse ? ghost.ui.foreground
+        : Qt.rgba(ghost.ui.foreground.r, ghost.ui.foreground.g, ghost.ui.foreground.b, ghost.dim ? 0.38 : 0.62)
+      font.family: ghost.ui.fontFamily
+      font.pixelSize: ghost.glyphSize
+      font.bold: true
+    }
+    MouseArea {
+      id: ghostHover
+      anchors.fill: parent
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onEntered: ghost.ui.playWeaponHover()
+      onClicked: ghost.clicked()
+    }
+  }
+
   // One line on the How to play page: a bold key and its explanation.
   component HelpRow: Row {
     property var ui
@@ -343,44 +375,31 @@ Panel {
           Column {
             width: parent.width
             spacing: Style.space(2)
-            // Their own row at the top: How to play on the left, sound on the right.
+            // A quiet row at the top right: How to play, then sound.
             Item {
               width: parent.width
               height: soundButton.height
-              // How to play; ← once it is open.
-              MenuButton {
-                id: helpButton
-                ui: root
-                anchors.left: parent.left
-                anchors.verticalCenter: parent.verticalCenter
-                width: Style.space(28); height: Style.space(28)
-                Accessible.name: root.helpOpen ? "Back" : "How to play"
-                onClicked: root.toggleHelp()
-                Text {
-                  anchors.centerIn: parent
-                  text: root.helpOpen ? "←" : "?"
-                  color: root.foreground
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.body
-                  font.bold: true
-                }
-              }
-              // Sound on/off; remembered between sessions.
-              MenuButton {
-                id: soundButton
-                objectName: "soundButton"
-                ui: root
+              Row {
                 anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                width: Style.space(28); height: Style.space(28)
-                Accessible.name: root.soundMuted ? "Turn sound on" : "Mute sound"
-                onClicked: root.toggleSound()
-                Text {
-                  anchors.centerIn: parent
-                  text: root.soundMuted ? "󰖁" : "󰕾"
-                  color: root.soundMuted ? Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.5) : root.foreground
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.heading
+                spacing: Style.space(2)
+                // How to play; ← once it is open.
+                GhostButton {
+                  id: helpButton
+                  ui: root
+                  glyph: root.helpOpen ? "←" : "?"
+                  Accessible.name: root.helpOpen ? "Back" : "How to play"
+                  onClicked: root.toggleHelp()
+                }
+                // Sound on/off; remembered between sessions.
+                GhostButton {
+                  id: soundButton
+                  objectName: "soundButton"
+                  ui: root
+                  glyph: root.soundMuted ? "󰖁" : "󰕾"
+                  dim: root.soundMuted
+                  glyphSize: Style.font.heading
+                  Accessible.name: root.soundMuted ? "Turn sound on" : "Mute sound"
+                  onClicked: root.toggleSound()
                 }
               }
             }
