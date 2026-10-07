@@ -371,42 +371,13 @@ Panel {
           id: content
           width: parent.width
           spacing: Style.space(12)
-          // Title and tagline sit close together, apart from the sections below.
+          // Title and tagline, centred and close together.
           Column {
             width: parent.width
             spacing: Style.space(2)
-            // A quiet row at the top right: How to play, then sound.
-            Item {
-              width: parent.width
-              height: soundButton.height
-              Row {
-                anchors.right: parent.right
-                spacing: Style.space(2)
-                // How to play; ← once it is open.
-                GhostButton {
-                  id: helpButton
-                  ui: root
-                  glyph: root.helpOpen ? "←" : "?"
-                  Accessible.name: root.helpOpen ? "Back" : "How to play"
-                  onClicked: root.toggleHelp()
-                }
-                // Sound on/off; remembered between sessions.
-                GhostButton {
-                  id: soundButton
-                  objectName: "soundButton"
-                  ui: root
-                  glyph: root.soundMuted ? "󰖁" : "󰕾"
-                  dim: root.soundMuted
-                  glyphSize: Style.font.heading
-                  Accessible.name: root.soundMuted ? "Turn sound on" : "Mute sound"
-                  onClicked: root.toggleSound()
-                }
-              }
-            }
             Text {
               id: title
               anchors.horizontalCenter: parent.horizontalCenter
-              topPadding: Style.space(2)
               text: root.helpOpen ? "HOW TO PLAY" : "BLOW OFF SOME STEAM"
               color: root.foreground
               font.family: root.fontFamily
@@ -416,14 +387,43 @@ Panel {
             }
             // The tagline never changes; each section says what to do in it.
             Text {
-              width: parent.width
+              anchors.horizontalCenter: parent.horizontalCenter
               horizontalAlignment: Text.AlignHCenter
-              wrapMode: Text.WordWrap
               visible: !root.helpOpen
               text: "Stress relief, now with\nrockets and lightsabers"
               color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.55)
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
+            }
+          }
+          // How to play and sound: quiet icons at the right, sitting right on top
+          // of the tabs (on the How to play page they stay, with ← for back).
+          // The row is shorter than the icons, which reach into the gap below.
+          Item {
+            width: parent.width
+            height: soundButton.height - Style.space(12)
+            Row {
+              anchors.right: parent.right
+              anchors.bottom: parent.bottom
+              anchors.bottomMargin: -Style.space(10)
+              spacing: Style.space(2)
+              GhostButton {
+                id: helpButton
+                ui: root
+                glyph: root.helpOpen ? "←" : "?"
+                Accessible.name: root.helpOpen ? "Back" : "How to play"
+                onClicked: root.toggleHelp()
+              }
+              GhostButton {
+                id: soundButton
+                objectName: "soundButton"
+                ui: root
+                glyph: root.soundMuted ? "󰖁" : "󰕾"
+                dim: root.soundMuted
+                glyphSize: Style.font.heading
+                Accessible.name: root.soundMuted ? "Turn sound on" : "Mute sound"
+                onClicked: root.toggleSound()
+              }
             }
           }
           // The main page: tabs, game modes and the armory (or the high scores).
