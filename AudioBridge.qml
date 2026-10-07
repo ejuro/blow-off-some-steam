@@ -49,7 +49,9 @@ Item {
     id: shutdownDelay
     interval: 350
     onTriggered: {
-      if (worker.running) { bridge.stopping = true; worker.running = false }
+      // A stopping worker takes no more commands: anything sent while it
+      // exits waits in `pending` for the next worker (see onExited).
+      if (worker.running) { bridge.stopping = true; bridge.ready = false; worker.running = false }
     }
   }
   Component.onDestruction: worker.running = false
