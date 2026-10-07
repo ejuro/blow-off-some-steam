@@ -1141,6 +1141,18 @@ Item {
     else if (weapon === "bazooka") bazookaLaunchSound.play()
     else pistolSound.play()
   }
+  // The right-click spin. Started while a gun is firing it turns at an even
+  // speed, so the rounds fan out evenly around the circle; otherwise it eases
+  // in and out. A lit saber keeps burning through the spin, so the spin cuts too.
+  readonly property bool firing: fireTimer.running || automaticHoldTimer.running || burstTimer.running
+  function spin(even) {
+    weaponSpinSound.stop()
+    if (weapon !== "lightsaber" || !saberHeld) weaponSpinSound.play()
+    wakeSimulation()
+    trickAnimation.stop()
+    trickAnimation.easing.type = (even === undefined ? firing : even) ? Easing.Linear : Easing.InOutCubic
+    trickAnimation.start()
+  }
   // One click: a single shot, or the MP5's 3-round burst.
   function fire() {
     if (!spec.burst) return shoot()
@@ -1732,11 +1744,7 @@ Item {
           return
         }
         if (event.button === Qt.RightButton) {
-          // A lit saber keeps burning through the spin, so the spin cuts too.
-          weaponSpinSound.stop()
-          if (root.weapon !== "lightsaber" || !root.saberHeld) weaponSpinSound.play()
-          root.wakeSimulation()
-          trickAnimation.restart()
+          root.spin()
           return
         }
         if (root.weapon === "lightsaber") {

@@ -168,7 +168,32 @@ ShellRoot {
     arena.closeWeaponWheel(false)
     arena.holster()
     check(!arena.saberHeld && arena.saberIgnition === 0 && !arena.armed, "holster puts the saber out")
-    console.log("ARENA_SABER_OK"); done.start()
+    // A spin started while spraying turns evenly, so AK rounds fan out all the way around.
+    arena.arm("ak47")
+    spray.angles = []
+    arena.spin(true)
+    spray.start()
   } }
+  Timer {
+    id: spray
+    property var angles: []
+    interval: 82; repeat: true
+    onTriggered: {
+      if (arena.trickAngle === 0 && angles.length > 0) {
+        stop()
+        // Which 45-degree sectors around the gun the rounds went into.
+        var sectors = {}
+        for (var i = 0; i < angles.length; i++) sectors[Math.floor((((angles[i] % 360) + 360) % 360) / 45)] = true
+        check(Object.keys(sectors).length >= 5, "a spin while spraying fans the rounds around: " + angles.map(function(a) { return Math.round(a) }).join(" "))
+        arena.holster()
+        console.log("ARENA_SABER_OK"); done.start()
+        return
+      }
+      arena.recoilClimb = 0; arena.sprayHeat = 0; arena.particles = []
+      if (!arena.shoot(false)) return
+      var round = arena.particles.filter(function(p) { return p.kind === 6 })[0]
+      angles.push(Math.atan2(round.vy, round.vx) * 180 / Math.PI - arena.aimAngle)
+    }
+  }
   Timer { id: done; interval: 150; onTriggered: Qt.quit() }
 }
