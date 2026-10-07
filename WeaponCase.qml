@@ -571,21 +571,13 @@ Panel {
               font.pixelSize: Style.font.caption
             }
           }
-          // How to play: what the plugin is, the controls, the modes and the weapons.
+          // How to play: the controls and the game modes.
           Column {
             objectName: "helpPage"
             width: parent.width
             spacing: Style.space(8)
             visible: root.helpOpen
-            Text {
-              width: parent.width
-              wrapMode: Text.WordWrap
-              horizontalAlignment: Text.AlignHCenter
-              text: "It all happens on a frozen snapshot of\nyour desktop. Nothing real is touched."
-              color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.62)
-              font.family: root.fontFamily; font.pixelSize: Style.font.caption
-            }
-            SectionTitle { ui: root; text: "CONTROLS"; topPadding: Style.space(6) }
+            SectionTitle { ui: root; text: "CONTROLS" }
             HelpRow { ui: root; key: "Left click"; value: "Fire. Hold the AK for full auto; hold the saber to light it, then move to cut." }
             HelpRow { ui: root; key: "Right click"; value: "Spin your weapon." }
             HelpRow { ui: root; key: "Middle · Q"; value: "Hold for the weapon wheel; 1–6 picks too. Not in Fly Hunt." }
@@ -595,13 +587,6 @@ Panel {
             HelpRow { ui: root; key: "Targets"; value: "Hit the roaming bullseye." }
             HelpRow { ui: root; key: "Fly Hunt"; value: "40 seconds, one weapon. Quick kills build a ×5 combo, golden flies are worth ×3, and time's up ends in bullet time. Beat your best for a medal." }
             HelpRow { ui: root; key: "Destruction"; value: "Shoot, slice and blow up a frozen snapshot of your desktop." }
-            SectionTitle { ui: root; text: "WEAPONS"; topPadding: Style.space(6) }
-            HelpRow { ui: root; key: "Glock P80"; value: "Quick and precise." }
-            HelpRow { ui: root; key: "Colt 45"; value: "Punches through every fly in line." }
-            HelpRow { ui: root; key: "AK-47"; value: "Full auto. The muzzle climbs: pull down to fight it." }
-            HelpRow { ui: root; key: "MP5A3"; value: "Tight 3-round bursts." }
-            HelpRow { ui: root; key: "M20"; value: "Rockets. The shockwave flings nearby flies." }
-            HelpRow { ui: root; key: "Lightsaber"; value: "Slice, spin and cut windows apart." }
             Text {
               anchors.horizontalCenter: parent.horizontalCenter
               topPadding: Style.space(6)
