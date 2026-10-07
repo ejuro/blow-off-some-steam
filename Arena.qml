@@ -417,9 +417,41 @@ Item {
     carveMarks.push(mark)
     indexCarveMark(mark)
   }
-  function burnGroove(region, p, q) {
+  // A window keeps its grooves until it falls, and a falling piece redraws
+  // every one of them, so they must not pile up: a groove is only burned
+  // where the blade reaches charred-free ground (holding it still or sawing
+  // along an old groove adds nothing), and each window takes at most this many.
+  readonly property int grooveCellSize: 5
+  readonly property int grooveLimit: 1200
+  function grooveReachesNewGround(region, p, q, length) {
+    var cells = region.grooveCells, fresh = false
+    var samples = Math.ceil(length / (grooveCellSize / 2))
+    for (var s = 0; s <= samples; s++) {
+      var key = Math.floor((p.x + (q.x - p.x) * s / samples) / grooveCellSize) + ":"
+              + Math.floor((p.y + (q.y - p.y) * s / samples) / grooveCellSize)
+      if (!cells[key]) { cells[key] = true; fresh = true }
+    }
+    return fresh
+  }
+  function burnGroove(region, from, q) {
+    // Where the tip carries on from the last call, burn on from the end of the
+    // last groove actually drawn, so skipped steps leave no gap in the slit.
+    var continuing = region.grooveTip && Math.abs(region.grooveTip.x - from.x) < 0.01 && Math.abs(region.grooveTip.y - from.y) < 0.01
+    if (!continuing) region.grooveEnd = null
+    region.grooveTip = {x: q.x, y: q.y}
+    if (Math.hypot(q.x - from.x, q.y - from.y) < 0.75) return
+    // The glow follows the blade either way; it is short-lived and capped.
+    addHeat(from, q)
+    var p = region.grooveEnd || from
     var length = Math.hypot(q.x - p.x, q.y - p.y)
-    if (length < 0.75) return
+    if (region.grooveCount >= grooveLimit || !grooveReachesNewGround(region, p, q, length)) {
+      // Creeping along slowly: keep the end so the next groove joins it.
+      // Running along old grooves: start afresh from here.
+      if (!region.grooveEnd || length > grooveCellSize * 2) region.grooveEnd = {x: q.x, y: q.y}
+      return
+    }
+    region.grooveCount++
+    region.grooveEnd = {x: q.x, y: q.y}
     var centreX = (p.x + q.x) / 2, centreY = (p.y + q.y) / 2
     // A charred halo, a dim ember rim, then the slit through the window on top.
     var widths = [{type: "scorch", width: 9}, {type: "ember", width: 4.5}, {type: "slit", width: 2.5}]
@@ -430,7 +462,6 @@ Item {
         x: centreX, y: centreY, radius: length / 2 + widths[i].width,
         clipX: region.x, clipY: region.y, clipWidth: region.width, clipHeight: region.height })
     }
-    addHeat(p, q)
     if (terrainCanvasLoader.item)
       terrainCanvasLoader.item.applyDamage(Qt.rect(Math.min(p.x, q.x) - 10, Math.min(p.y, q.y) - 10,
                                                    Math.abs(q.x - p.x) + 20, Math.abs(q.y - p.y) + 20))
@@ -832,7 +863,8 @@ Item {
       console.warn("Blow off some steam: could not read window geometry", error)
     }
     for (var r = 0; r < regions.length; r++)
-      regions[r].poly = Cut.rect(regions[r].x, regions[r].y, regions[r].width, regions[r].height), regions[r].holes = []
+      regions[r].poly = Cut.rect(regions[r].x, regions[r].y, regions[r].width, regions[r].height), regions[r].holes = [],
+      regions[r].grooveCells = {}, regions[r].grooveCount = 0
     destructibles = regions
     console.info("Desktop destruction prepared " + regions.length + " regions")
   }

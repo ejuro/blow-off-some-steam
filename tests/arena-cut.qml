@@ -113,6 +113,23 @@ ShellRoot {
     check(contains(big.poly, 1350, 800) && !contains(big.poly, 1350, 300) && !contains(big.poly, 1350, 500),
           "the top fell, the bottom stands, and the hole stays open")
 
+    // Grooves stay bounded: sawing back and forth along one groove, or holding
+    // the tip still with a shaky hand, burns nothing new after the first pass.
+    win = arena.destructibles[1]
+    sweep([[420, 492.5], [580, 492.5]])
+    var sawn = arena.carveMarks.length
+    var saw = []
+    for (var pass = 0; pass < 20; pass++) saw.push([pass % 2 ? 420 : 580, 492.5 + (pass % 3 - 1) * 0.8])
+    sweep(saw)
+    var shake = [[500, 492.5]]
+    for (var jitter = 0; jitter < 300; jitter++) shake.push([500 + Math.sin(jitter) * 1.5, 492.5 + Math.cos(jitter * 1.7) * 1.5])
+    sweep(shake)
+    check(arena.carveMarks.length === sawn && !win.destroyed, "sawing and shaking add no marks: " + (arena.carveMarks.length - sawn))
+    // A window at its groove limit takes no more, though the blade still glows there.
+    win.grooveCount = arena.grooveLimit
+    sweep([[420, 480], [580, 480]])
+    check(arena.carveMarks.length === sawn && arena.saberHeat.length > 0, "the groove limit holds")
+
     // Halving the small window leaves under 2500 px² standing, so that falls too.
     sweep([[830, 250], [830, 400]])
     check(arena.destructibles[2].destroyed && !arena.destructibles[1].destroyed, "a sliver under 2500 px² falls")
