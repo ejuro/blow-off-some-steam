@@ -396,7 +396,7 @@ Panel {
                   anchors.verticalCenter: parent.verticalCenter
                   Text { text: scoreRow.modelData.title; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
                   Text {
-                    text: scoreRow.best ? scoreRow.best.kills + " flies · ×" + scoreRow.best.bestCombo + " · " + new Date(scoreRow.best.date).toLocaleDateString(Qt.locale(), Locale.ShortFormat) : "No completed hunt yet"
+                    text: scoreRow.best ? scoreRow.best.kills + " flies · " + new Date(scoreRow.best.date).toLocaleDateString(Qt.locale(), Locale.ShortFormat) : "No completed hunt yet"
                     color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.5)
                     font.family: root.fontFamily; font.pixelSize: Math.max(9, Style.font.caption - 2)
                   }

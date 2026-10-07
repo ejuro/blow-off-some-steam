@@ -987,7 +987,7 @@ Item {
           color: hunt.ui.accent; font.family: hunt.ui.fontFamily; font.pixelSize: 24; font.bold: true
         }
         Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: Math.round(hunt.shownScore) + " points"; color: hunt.ui.foreground; font.family: hunt.ui.fontFamily; font.pixelSize: 36; font.bold: true }
-        Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: hunt.kills + " flies · best combo ×" + hunt.bestCombo; color: hunt.ui.tint(hunt.ui.foreground, 0.85); font.family: hunt.ui.fontFamily; font.pixelSize: 18 }
+        Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: hunt.kills + (hunt.kills === 1 ? " fly" : " flies"); color: hunt.ui.tint(hunt.ui.foreground, 0.85); font.family: hunt.ui.fontFamily; font.pixelSize: 18 }
         // The round on a track from 0 to platinum: the fill follows the count-up,
         // the medal coins above light up as it passes them, and the previous
         // best sits underneath.
