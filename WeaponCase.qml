@@ -371,42 +371,41 @@ Panel {
           id: content
           width: parent.width
           spacing: Style.space(12)
-          // Title and tagline, centred and close together.
-          Column {
-            width: parent.width
-            spacing: Style.space(2)
-            Text {
-              id: title
-              anchors.horizontalCenter: parent.horizontalCenter
-              text: root.helpOpen ? "HOW TO PLAY" : "BLOW OFF SOME STEAM"
-              color: root.foreground
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.heading
-              font.bold: true
-              font.letterSpacing: 1.5
-            }
-            // The tagline never changes; each section says what to do in it.
-            Text {
-              anchors.horizontalCenter: parent.horizontalCenter
-              horizontalAlignment: Text.AlignHCenter
-              visible: !root.helpOpen
-              text: "Stress relief, now with\nrockets and lightsabers"
-              color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.55)
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.caption
-            }
-          }
-          // How to play and sound: quiet icons at the right, sitting right on top
-          // of the tabs (on the How to play page they stay, with ← for back).
-          // The row is shorter than the icons, which reach into the gap below.
+          // Header, left-aligned like the sections: the title and tagline on the
+          // left, the quiet How to play and sound icons on the title's line.
           Item {
             width: parent.width
-            height: soundButton.height - Style.space(12)
-            Row {
-              anchors.right: parent.right
-              anchors.bottom: parent.bottom
-              anchors.bottomMargin: -Style.space(10)
+            height: headerText.implicitHeight
+            Column {
+              id: headerText
+              anchors.left: parent.left
+              anchors.right: headerIcons.left
+              anchors.rightMargin: Style.space(8)
               spacing: Style.space(2)
+              Text {
+                id: title
+                text: root.helpOpen ? "HOW TO PLAY" : "BLOW OFF SOME STEAM"
+                color: root.foreground
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.heading
+                font.bold: true
+                font.letterSpacing: 1.5
+              }
+              // The tagline never changes; each section says what to do in it.
+              Text {
+                visible: !root.helpOpen
+                text: "Stress relief, now with\nrockets and lightsabers"
+                color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.55)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+            }
+            Row {
+              id: headerIcons
+              anchors.right: parent.right
+              y: title.y + (title.height - height) / 2
+              spacing: Style.space(2)
+              // How to play; ← once it is open.
               GhostButton {
                 id: helpButton
                 ui: root
@@ -414,6 +413,7 @@ Panel {
                 Accessible.name: root.helpOpen ? "Back" : "How to play"
                 onClicked: root.toggleHelp()
               }
+              // Sound on/off; remembered between sessions.
               GhostButton {
                 id: soundButton
                 objectName: "soundButton"
