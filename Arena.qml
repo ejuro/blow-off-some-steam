@@ -78,8 +78,12 @@ Item {
   property real aimTurnLeft: 0
   property bool gunPositioned: false
   property bool automaticHoldEngaged: false
-  // AK-47 muzzle climb in degrees: grows with each shot of a held burst, settles when released.
+  // AK-47 muzzle climb in degrees: grows with each shot of a held burst, settles
+  // when released. Pulling the mouse down against it keeps a spray on target.
   property real recoilClimb: 0
+  // AK-47 spray heat: how far its shots scatter. Unlike the climb it cannot be
+  // aimed against; it builds with each shot and cools when the trigger is let go.
+  property real sprayHeat: 0
   // MP5 burst shots still to come.
   property int burstLeft: 0
   property int bulletSerial: 0
@@ -106,7 +110,7 @@ Item {
   }
   function clearRoundEffects() {
     cancelSaber()
-    automaticHoldTimer.stop(); fireTimer.stop(); burstTimer.stop(); burstCooldown.stop(); rocketCooldown.stop(); burstLeft = 0; recoilClimb = 0; automaticHoldEngaged = false
+    automaticHoldTimer.stop(); fireTimer.stop(); burstTimer.stop(); burstCooldown.stop(); rocketCooldown.stop(); burstLeft = 0; recoilClimb = 0; sprayHeat = 0; automaticHoldEngaged = false
     automaticSound.stop(); mp5AutomaticSound.stop()
     pistolSound.stop(); akSingleSound.stop(); mp5SingleSound.stop()
     revolverSound.stop(); bazookaLaunchSound.stop(); rocketExplosionSound.stop()
@@ -716,7 +720,7 @@ Item {
     automaticHoldEngaged = false
     automaticHoldTimer.stop()
     fireTimer.stop()
-    burstTimer.stop(); burstCooldown.stop(); rocketCooldown.stop(); burstLeft = 0; recoilClimb = 0
+    burstTimer.stop(); burstCooldown.stop(); rocketCooldown.stop(); burstLeft = 0; recoilClimb = 0; sprayHeat = 0
     automaticSound.stop()
     mp5AutomaticSound.stop()
     recoil = 0
@@ -1089,7 +1093,7 @@ Item {
     automaticHoldEngaged = false
     automaticHoldTimer.stop()
     fireTimer.stop()
-    burstTimer.stop(); burstCooldown.stop(); rocketCooldown.stop(); burstLeft = 0; recoilClimb = 0
+    burstTimer.stop(); burstCooldown.stop(); rocketCooldown.stop(); burstLeft = 0; recoilClimb = 0; sprayHeat = 0
     pistolSound.stop()
     akSingleSound.stop()
     automaticSound.stop()
@@ -1165,13 +1169,17 @@ Item {
     previousRecoil = recoil
     previousFlash = flash
     wakeSimulation()
-    var angle = aimAngle * Math.PI / 180
+    // The barrel's real direction, including a right-click spin in progress.
+    var angle = (aimAngle + trickAngle) * Math.PI / 180
     var cosA = Math.cos(angle)
     var sinA = Math.sin(angle)
-    // The AK's shots stray more the longer it has been climbing: within 0.3
-    // degrees on the first shot, up to about 16 either way on a long spray.
-    var shotAngle = spec.climb ? angle + (Math.random() * 2 - 1) * (0.3 + recoilClimb * 0.7) * Math.PI / 180 : angle
-    if (spec.climb) recoilClimb = Math.min(22, recoilClimb + 2.3)
+    // The AK's shots scatter more the longer the spray: within 0.3 degrees on
+    // the first shot, up to about 16 either way on a long one.
+    var shotAngle = spec.climb ? angle + (Math.random() * 2 - 1) * (0.3 + sprayHeat * 0.7) * Math.PI / 180 : angle
+    if (spec.climb) {
+      sprayHeat = Math.min(22, sprayHeat + 2.3)
+      recoilClimb = Math.min(30, recoilClimb + 3.2)
+    }
     if (bugHuntEnabled && bugLayerLoader.item) bugLayerLoader.item.kick(spec.kick || 0)
     var localMuzzleX = (spec.muzzleX - spec.gripX) * spec.scale
     var localMuzzleY = (spec.muzzleY - spec.gripY) * spec.scale * flipScale
@@ -1555,8 +1563,8 @@ Item {
     Item {
       visible: root.armed
       z: 30
-      x: root.renderGunX - root.spec.gripX * root.spec.scale - root.renderRecoil * Math.cos(root.renderAimAngle * Math.PI / 180)
-      y: root.renderGunY - root.spec.gripY * root.spec.scale - root.renderRecoil * Math.sin(root.renderAimAngle * Math.PI / 180)
+      x: root.renderGunX - root.spec.gripX * root.spec.scale - root.renderRecoil * Math.cos(root.renderBarrelAngle * Math.PI / 180)
+      y: root.renderGunY - root.spec.gripY * root.spec.scale - root.renderRecoil * Math.sin(root.renderBarrelAngle * Math.PI / 180)
       width: root.spec.width * root.spec.scale
       height: root.spec.height * root.spec.scale
       Image {
@@ -1965,6 +1973,9 @@ Item {
   readonly property real renderGunX: gunX
   readonly property real renderGunY: gunY
   readonly property real renderAimAngle: aimAngle - (spec.recoilFlip ? renderRecoil * spec.recoilFlip * flipScale : 0)
+  // Where the barrel actually points as drawn, spin included: recoil, the
+  // muzzle flash, and smoke follow it.
+  readonly property real renderBarrelAngle: renderAimAngle + trickAngle
   readonly property real renderRecoil: simulationAwake ? previousRecoil + (recoil - previousRecoil) * simulationBlend : recoil
   readonly property real renderFlash: simulationAwake ? previousFlash + (flash - previousFlash) * simulationBlend : flash
 
@@ -2032,8 +2043,10 @@ Item {
       var step = deltaSeconds * 2 / 0.12
       root.flipScale = Math.abs(facing - root.flipScale) <= step ? facing : root.flipScale + (facing > root.flipScale ? step : -step)
     }
-    if (root.recoilClimb > 0 && !fireTimer.running)
-      root.recoilClimb = Math.max(0, root.recoilClimb - deltaSeconds * 45)
+    if (!fireTimer.running) {
+      if (root.recoilClimb > 0) root.recoilClimb = Math.max(0, root.recoilClimb - deltaSeconds * 60)
+      if (root.sprayHeat > 0) root.sprayHeat = Math.max(0, root.sprayHeat - deltaSeconds * 45)
+    }
   }
 
   function simulateStep() {
@@ -2260,7 +2273,7 @@ Item {
       var dy = root.pointerY - root.gunY
       var distance = Math.sqrt(dx * dx + dy * dy)
       var settled = !root.gunPositioned || distance <= 0.001 || Math.abs(distance - root.followDistance) < 0.01
-      if (settled && root.recoilClimb === 0 && Math.abs(root.flipScale) === 1 && root.aimTurnLeft < 0.05 && !root.saberHeld && root.saberIgnition === 0 && root.saberTrail.length === 0 && root.saberHeat.length === 0 && !trickAnimation.running && root.particles.length === 0 && root.pendingEffects.length === 0 && root.recoil === 0 && root.flash === 0) {
+      if (settled && root.recoilClimb === 0 && root.sprayHeat === 0 && Math.abs(root.flipScale) === 1 && root.aimTurnLeft < 0.05 && !root.saberHeld && root.saberIgnition === 0 && root.saberTrail.length === 0 && root.saberHeat.length === 0 && !trickAnimation.running && root.particles.length === 0 && root.pendingEffects.length === 0 && root.recoil === 0 && root.flash === 0) {
         root.simulationAwake = false
         root.simulationBlend = 1
       }

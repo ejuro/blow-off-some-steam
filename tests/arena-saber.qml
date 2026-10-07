@@ -87,6 +87,13 @@ ShellRoot {
     for (var w1 = 0; w1 < 60; w1++) arena.advanceWeapon(0.016)
     check(arena.aimFlipped && arena.flipScale === -1, "the gun ends up facing left")
     check(worstTurn < 30 && worstRoll < 0.5, "crossing over is smooth: " + worstTurn.toFixed(1) + " deg, roll " + worstRoll.toFixed(2))
+    // Firing mid-spin: the round leaves along the spun barrel.
+    arena.trickAngle = 90; arena.particles = []
+    arena.shoot(false)
+    var spun = arena.particles.filter(function(p) { return p.kind === 6 })[0]
+    var spunOff = Math.abs(((Math.atan2(spun.vy, spun.vx) * 180 / Math.PI - (arena.aimAngle + 90)) % 360 + 540) % 360 - 180)
+    check(spunOff < 0.01, "shots follow the gun through a spin: " + spunOff)
+    arena.trickAngle = 0
     // The Colt is thrown back and its barrel flips up, for the look only, and it eases back.
     arena.swapWeapon("revolver")
     arena.gunPositioned = true; arena.gunX = 300; arena.gunY = 400; arena.pointerX = 600; arena.pointerY = 400
@@ -105,14 +112,16 @@ ShellRoot {
     // AK: holding climbs the muzzle and it settles when released.
     arena.swapWeapon("ak47")
     for (var a = 0; a < 6; a++) arena.shoot(false)
-    check(arena.recoilClimb >= 8, "the AK climbs as it fires: " + arena.recoilClimb)
+    check(arena.recoilClimb >= 18 && arena.sprayHeat >= 13, "the AK climbs and heats up as it fires: " + arena.recoilClimb + " / " + arena.sprayHeat)
+    for (var more = 0; more < 10; more++) arena.shoot(false)
+    check(arena.recoilClimb === 30 && arena.sprayHeat === 22, "climb and spray heat top out")
     arena.advanceWeapon(1)
-    check(arena.recoilClimb === 0, "the climb settles once the trigger is released")
+    check(arena.recoilClimb === 0 && arena.sprayHeat === 0, "the climb and the scatter settle once the trigger is released")
     // A first shot goes where it points; a long spray scatters widely.
-    function scatter(climb) {
+    function scatter(heat) {
       var worst = 0
       for (var n = 0; n < 150; n++) {
-        arena.recoilClimb = climb; arena.particles = []
+        arena.sprayHeat = heat; arena.recoilClimb = 0; arena.particles = []
         arena.shoot(false)
         var round = arena.particles.filter(function(p) { return p.kind === 6 })[0]
         var off = Math.abs(((Math.atan2(round.vy, round.vx) * 180 / Math.PI - arena.aimAngle) % 360 + 540) % 360 - 180)
@@ -121,7 +130,7 @@ ShellRoot {
       return worst
     }
     var tight = scatter(0), wide = scatter(22)
-    arena.recoilClimb = 0
+    arena.recoilClimb = 0; arena.sprayHeat = 0
     check(tight < 0.5 && wide > 12 && wide < 16.5, "AK spread grows with the spray: " + tight.toFixed(2) + " / " + wide.toFixed(1) + " deg")
     // MP5: a click is a 3-round burst, and the next one waits for the cooldown.
     arena.swapWeapon("mp5a3")
