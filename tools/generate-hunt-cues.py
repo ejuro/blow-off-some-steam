@@ -11,6 +11,7 @@ in it keep their relative loudness:
   golden-chime.wav       a quick sparkling bell run when a golden fly appears
   golden-kill.wav        a "cha-ching": a noise swipe, two bright bell hits and a coin jingle
   medal-thud.wav         a medal slamming onto the results card: low thump and a metal ring
+  medal-pass-1..4.wav    a ding a step higher for each medal the results track passes
   slowmo.wav             time's up: a low boom and a tone sliding down under a falling whoosh
   silence.wav            half a second of digital silence; the audio worker loops
                          it to keep the output device awake while it runs
@@ -166,6 +167,8 @@ write({'new-best-fanfare.wav': fanfare()})
 write({'golden-chime.wav': [v * .7 for v in golden_chime()], 'golden-kill.wav': golden_kill()})
 write({'medal-thud.wav': medal_thud()})
 write({'slowmo.wav': slowmo()})
+# Bronze → platinum: a major arpeggio up from G5.
+write({f'medal-pass-{i + 1}.wav': render(0.45, lambda t, m=m: bell(note(m), t, 0.4, 0.8)) for i, m in enumerate([79, 83, 86, 91])})
 with wave.open(str(SOUNDS / 'silence.wav'), 'wb') as output:
     output.setparams((1, 2, RATE, 0, 'NONE', 'not compressed'))
     output.writeframes(b'\0\0' * (RATE // 2))

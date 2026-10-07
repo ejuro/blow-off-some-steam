@@ -329,6 +329,15 @@ Item {
   RemoteSound { id: goldenKill; audio: hunt.arena.audio; source: Qt.resolvedUrl("sounds/golden-kill.wav"); volume: 0.6 }
   RemoteSound { id: slowmoSound; audio: hunt.arena.audio; source: Qt.resolvedUrl("sounds/slowmo.wav"); volume: 0.6 }
   RemoteSound { id: medalThud; audio: hunt.arena.audio; source: Qt.resolvedUrl("sounds/medal-thud.wav"); volume: 0.6 }
+  // A ding a step higher for each medal the results track passes.
+  RemoteSound { id: medalPass0; audio: hunt.arena.audio; source: Qt.resolvedUrl("sounds/medal-pass-1.wav"); volume: 0.45 }
+  RemoteSound { id: medalPass1; audio: hunt.arena.audio; source: Qt.resolvedUrl("sounds/medal-pass-2.wav"); volume: 0.45 }
+  RemoteSound { id: medalPass2; audio: hunt.arena.audio; source: Qt.resolvedUrl("sounds/medal-pass-3.wav"); volume: 0.45 }
+  RemoteSound { id: medalPass3; audio: hunt.arena.audio; source: Qt.resolvedUrl("sounds/medal-pass-4.wav"); volume: 0.45 }
+  function medalPassed(rank) {
+    var ding = [medalPass0, medalPass1, medalPass2, medalPass3][rank]
+    if (ding) { ding.stop(); ding.play() }
+  }
   // A golden kill: coins burst out, the screen flashes gold, the hit lands harder.
   property int coinCursor: 0
   function goldenBurst(px, py) {
@@ -881,6 +890,74 @@ Item {
         }
         Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: Math.round(hunt.shownScore) + " points"; color: hunt.ui.foreground; font.family: hunt.ui.fontFamily; font.pixelSize: 36; font.bold: true }
         Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: hunt.kills + " flies · best combo ×" + hunt.bestCombo; color: hunt.ui.tint(hunt.ui.foreground, 0.85); font.family: hunt.ui.fontFamily; font.pixelSize: 18 }
+        // The round on a track from 0 to platinum: the fill follows the count-up,
+        // the medal coins above light up as it passes them, and the previous
+        // best sits underneath.
+        Item {
+          id: timeline
+          readonly property var ladder: Rules.medalScores[hunt.round.weapon || hunt.weapon] || null
+          readonly property real bestScore: hunt.previousBest ? hunt.previousBest.score : -1
+          readonly property real highest: ladder ? Math.max(ladder[3], bestScore, hunt.score) : 1
+          // Room past platinum when a score goes beyond it.
+          readonly property real span: ladder && highest > ladder[3] ? highest * 1.05 : highest
+          function at(value) { return track.x + track.width * Math.max(0, Math.min(1, value / span)) }
+          visible: !!ladder
+          width: parent.width; height: 60
+          Rectangle {
+            id: track
+            x: 10; y: 26; width: parent.width - 20; height: 8; radius: 4
+            color: hunt.ui.tint(hunt.ui.foreground, 0.12)
+            Rectangle {
+              width: Math.max(height, parent.width * Math.min(1, hunt.shownScore / timeline.span))
+              visible: hunt.shownScore > 0
+              height: parent.height; radius: parent.radius
+              color: hunt.ui.accent
+            }
+          }
+          Repeater {
+            model: timeline.ladder || []
+            delegate: Item {
+              id: medalStop
+              required property int index
+              required property var modelData
+              readonly property bool reached: hunt.shownScore >= modelData
+              x: timeline.at(modelData); y: 0
+              onReachedChanged: if (reached && hunt.finished) hunt.medalPassed(index)
+              Rectangle { x: -0.5; y: 18; width: 1; height: 8; color: hunt.ui.tint(hunt.ui.foreground, medalStop.reached ? 0.5 : 0.2) }
+              Medal {
+                x: -8; y: 0; width: 16; height: 16
+                rank: medalStop.index
+                opacity: medalStop.reached ? 1 : 0.3
+                scale: medalStop.reached ? 1.15 : 0.85
+                Behavior on scale { NumberAnimation { duration: 280; easing.type: Easing.OutBack; easing.overshoot: 3 } }
+                Behavior on opacity { NumberAnimation { duration: 120 } }
+              }
+            }
+          }
+          Item {
+            id: bestMark
+            readonly property bool beaten: hunt.shownScore > timeline.bestScore
+            visible: timeline.bestScore >= 0
+            x: timeline.at(timeline.bestScore); y: track.y + track.height + 3
+            Canvas {
+              x: -5; y: 0; width: 10; height: 7
+              readonly property color ink: bestMark.beaten ? hunt.ui.accent : hunt.ui.muted
+              onInkChanged: requestPaint()
+              onPaint: {
+                var c = getContext("2d"); c.reset()
+                c.beginPath(); c.moveTo(5, 0); c.lineTo(10, 7); c.lineTo(0, 7); c.closePath()
+                c.fillStyle = ink; c.fill()
+              }
+            }
+            Text {
+              anchors.horizontalCenter: parent.left
+              y: 8
+              text: "BEST"
+              color: bestMark.beaten ? hunt.ui.accent : hunt.ui.muted
+              font.family: hunt.ui.fontFamily; font.pixelSize: 10; font.bold: true
+            }
+          }
+        }
         // The medal slams in once the score has counted up, with the next one to aim for.
         Item {
           width: parent.width; height: 56
@@ -942,7 +1019,7 @@ Item {
     id: resultReveal
     ScriptAction { script: { hunt.shownScore = 0; hunt.revealed = false; verdict.opacity = 0; medalCoin.opacity = 0; medalCoin.shine = -1 } }
     PauseAnimation { duration: 250 }
-    NumberAnimation { target: hunt; property: "shownScore"; from: 0; to: hunt.score; duration: Math.min(1400, 500 + hunt.score / 40); easing.type: Easing.OutCubic }
+    NumberAnimation { target: hunt; property: "shownScore"; from: 0; to: hunt.score; duration: Math.min(1900, 700 + hunt.score / 25); easing.type: Easing.OutCubic }
     ParallelAnimation {
       NumberAnimation { target: medalCoin; property: "scale"; from: 2.8; to: 1; duration: hunt.medal >= 0 ? 210 : 0; easing.type: Easing.InQuad }
       NumberAnimation { target: medalCoin; property: "opacity"; from: 0; to: 1; duration: hunt.medal >= 0 ? 110 : 0 }
