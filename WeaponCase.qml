@@ -375,7 +375,7 @@ Panel {
           // left, the quiet How to play and sound icons on the title's line.
           Item {
             width: parent.width
-            height: headerText.implicitHeight
+            height: Math.max(headerText.implicitHeight, headerIcons.y + headerIcons.height)
             Column {
               id: headerText
               anchors.left: parent.left
@@ -403,7 +403,9 @@ Panel {
             Row {
               id: headerIcons
               anchors.right: parent.right
-              y: title.y + (title.height - height) / 2
+              // Centred on the title, but never above the scroll area's top edge,
+              // which would clip the hover outline.
+              y: Math.max(1, title.y + (title.height - height) / 2)
               spacing: Style.space(2)
               // How to play; ← once it is open.
               GhostButton {
