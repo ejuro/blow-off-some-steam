@@ -53,6 +53,27 @@ ShellRoot {
     arena.swapWeapon("glock")
     check(!arena.saberHeld && arena.saberIgnition === 0 && arena.saberTrail.length === 0, "switch puts the saber out")
     check(arena.shoot(false) && arena.particles.length > 0, "guns still fire")
+    // Signatures. Colt: one round kills every fly on its path and keeps flying.
+    arena.swapWeapon("revolver")
+    var killsBefore = hunt.round.kills
+    for (var c = 0; c < 3; c++) { flies[c].spawn(); flies[c].x = 700 + c * 120; flies[c].y = 300 }
+    check(!arena.hitBug(600, 300, 1100, 300, 6, "revolver", 777), "a piercing round is not stopped")
+    check(hunt.round.kills === killsBefore + 3 && hunt.burstCount === 3, "the Colt pierces every fly in line")
+    // AK: holding climbs the muzzle and it settles when released.
+    arena.swapWeapon("ak47")
+    for (var a = 0; a < 6; a++) arena.shoot(false)
+    check(arena.recoilClimb >= 8, "the AK climbs as it fires: " + arena.recoilClimb)
+    arena.advanceWeapon(1)
+    check(arena.recoilClimb === 0, "the climb settles once the trigger is released")
+    // MP5: a click is a 3-round burst, and the next one waits for the cooldown.
+    arena.swapWeapon("mp5a3")
+    check(arena.fire() && arena.burstLeft === 2 && !arena.fire(), "the MP5 fires 3-round bursts")
+    arena.swapWeapon("glock")
+    check(arena.burstLeft === 0, "switching weapons ends a burst")
+    // M20: the shockwave flings the flies just outside the blast.
+    flies[3].spawn(); flies[3].x = 900; flies[3].y = 500
+    hunt.hitBlast(900 - 280, 500, 180, "bazooka")
+    check(flies[3].alive && flies[3].stun > 0, "the M20 flings a fly outside its blast")
     arena.swapWeapon("lightsaber")
     arena.shoot(false)
     arena.openWeaponWheel(500, 350)

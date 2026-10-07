@@ -461,18 +461,18 @@ Panel {
                 width: parent.width
                 spacing: Style.space(10)
                 WeaponCard { ui: root; weaponId: "glock"; title: "GLOCK P80"; subtitle: "quick single shots"; artSource: Qt.resolvedUrl("assets/glock-p80.png"); artClip: Qt.rect(18, 8, 30, 20) }
-                WeaponCard { ui: root; weaponId: "revolver"; title: "COLT 45"; subtitle: "heavy single shots"; artSource: Qt.resolvedUrl("assets/revolver-colt45.png"); artClip: Qt.rect(2, 11, 45, 18) }
+                WeaponCard { ui: root; weaponId: "revolver"; title: "COLT 45"; subtitle: "punches through"; artSource: Qt.resolvedUrl("assets/revolver-colt45.png"); artClip: Qt.rect(2, 11, 45, 18) }
               }
               Row {
                 width: parent.width
                 spacing: Style.space(10)
-                WeaponCard { ui: root; weaponId: "ak47"; title: "AK-47"; subtitle: "hold for full auto"; artSource: Qt.resolvedUrl("assets/ak47.png"); artClip: Qt.rect(3, 5, 76, 22) }
-                WeaponCard { ui: root; weaponId: "mp5a3"; title: "MP5A3"; subtitle: "fast full auto"; artSource: Qt.resolvedUrl("assets/mp5a3.png"); artClip: Qt.rect(3, 3, 57, 27) }
+                WeaponCard { ui: root; weaponId: "ak47"; title: "AK-47"; subtitle: "full auto, climbs"; artSource: Qt.resolvedUrl("assets/ak47.png"); artClip: Qt.rect(3, 5, 76, 22) }
+                WeaponCard { ui: root; weaponId: "mp5a3"; title: "MP5A3"; subtitle: "3-round bursts"; artSource: Qt.resolvedUrl("assets/mp5a3.png"); artClip: Qt.rect(3, 3, 57, 27) }
               }
               Row {
                 width: parent.width
                 spacing: Style.space(10)
-                WeaponCard { ui: root; weaponId: "bazooka"; title: "M20"; subtitle: "one enormous boom"; artSource: Qt.resolvedUrl("assets/bazooka-m20.png"); artClip: Qt.rect(3, 7, 112, 24) }
+                WeaponCard { ui: root; weaponId: "bazooka"; title: "M20"; subtitle: "boom + shockwave"; artSource: Qt.resolvedUrl("assets/bazooka-m20.png"); artClip: Qt.rect(3, 7, 112, 24) }
                 WeaponCard { ui: root; weaponId: "lightsaber"; title: "LIGHTSABER"; subtitle: "hold to ignite"; artSource: ""; artClip: Qt.rect(0, 0, 96, 24) }
               }
             }

@@ -72,6 +72,19 @@ if (root.flash > 0) {
     c.globalAlpha = root.flash * 0.8
     c.fillStyle = "#ff762b"
     c.beginPath(); c.moveTo(0, 0); c.lineTo(27, -6); c.lineTo(20, 0); c.lineTo(28, 6); c.closePath(); c.fill()
+  } else if (root.spec.flashStyle === "ak") {
+    // A big three-pronged rifle flash with a hot core.
+    c.fillStyle = "#ffd84a"
+    c.beginPath()
+    c.moveTo(-3, 0); c.lineTo(10, -5); c.lineTo(14, -16); c.lineTo(20, -6); c.lineTo(44, 0)
+    c.lineTo(20, 6); c.lineTo(14, 16); c.lineTo(10, 5); c.closePath(); c.fill()
+    c.globalAlpha = root.flash * 0.85
+    c.fillStyle = "#fff6c8"
+    c.beginPath(); c.moveTo(0, 0); c.lineTo(16, -4); c.lineTo(28, 0); c.lineTo(16, 4); c.closePath(); c.fill()
+  } else if (root.spec.flashStyle === "mp5") {
+    // Small and tight: a short cone.
+    c.fillStyle = "#ffe98a"
+    c.beginPath(); c.moveTo(0, 0); c.lineTo(18, -5); c.lineTo(15, 0); c.lineTo(18, 5); c.closePath(); c.fill()
   } else {
     c.fillStyle = "#ffe86b"
     c.beginPath(); c.moveTo(0,0); c.lineTo(29,-10); c.lineTo(20,0); c.lineTo(33,9); c.closePath(); c.fill()

@@ -47,12 +47,16 @@ Item {
   property string weapon: "glock"
   readonly property var spec: {
     switch (weapon) {
-    case "lightsaber": return { name: "Lightsaber", image: "", width: 96, height: 24, scale: 2.6, gripX: 12, gripY: 12, muzzleX: 92, muzzleY: 12, automatic: false, interval: 460, recoil: 0, particles: 0, power: 1, ejectsCase: false }
-    case "revolver": return { name: "Colt 45", image: "assets/revolver-colt45.png", width: 64, height: 32, scale: 2.2, gripX: 20, gripY: 25, muzzleX: 47, muzzleY: 12.5, automatic: false, interval: 280, recoil: 19, particles: 25, power: 1.25, ejectsCase: false, flashStyle: "revolver" }
-    case "ak47": return { name: "AK-47", image: "assets/ak47.png", width: 96, height: 48, scale: 2, gripX: 35, gripY: 33, muzzleX: 79, muzzleY: 9.5, ejectX: 45, ejectY: 12, automatic: true, interval: 82, recoil: 10, particles: 7, power: 1 }
-    case "mp5a3": return { name: "MP5A3", image: "assets/mp5a3.png", width: 80, height: 48, scale: 2.1, gripX: 33, gripY: 33, muzzleX: 60, muzzleY: 7.5, ejectX: 31, ejectY: 8, automatic: true, interval: 66, recoil: 7, particles: 6, power: 0.9 }
-    case "bazooka": return { name: "M20 Bazooka", image: "assets/bazooka-m20.png", width: 128, height: 32, scale: 2, gripX: 46, gripY: 24, muzzleX: 115, muzzleY: 12.5, automatic: false, interval: 500, recoil: 28, particles: 42, power: 1.8 }
-    default: return { name: "Glock P80", image: "assets/glock-p80.png", width: 64, height: 48, scale: 2.2, gripX: 22, gripY: 34, muzzleX: 48, muzzleY: 11.5, ejectX: 31, ejectY: 14, automatic: false, interval: 220, recoil: 15, particles: 19, power: 1 }
+    // Each gun has a signature: the Colt's rounds pierce every fly in line,
+    // the AK climbs and spreads while held, the MP5 fires tight 3-round
+    // bursts, and the M20's blast flings the flies it misses. kick shakes
+    // the Fly Hunt play area on each shot; stopScale sizes a kill's hit-stop.
+    case "lightsaber": return { name: "Lightsaber", image: "", width: 96, height: 24, scale: 2.6, gripX: 12, gripY: 12, muzzleX: 92, muzzleY: 12, automatic: false, interval: 460, recoil: 0, particles: 0, power: 1, ejectsCase: false, kick: 0, stopScale: 1 }
+    case "revolver": return { name: "Colt 45", image: "assets/revolver-colt45.png", width: 64, height: 32, scale: 2.2, gripX: 20, gripY: 25, muzzleX: 47, muzzleY: 12.5, automatic: false, interval: 280, recoil: 24, particles: 25, power: 1.25, ejectsCase: false, flashStyle: "revolver", bulletSize: 5.6, pierce: true, kick: 0.24, stopScale: 1.7 }
+    case "ak47": return { name: "AK-47", image: "assets/ak47.png", width: 96, height: 48, scale: 2, gripX: 35, gripY: 33, muzzleX: 79, muzzleY: 9.5, ejectX: 45, ejectY: 12, automatic: true, interval: 82, recoil: 11, particles: 8, power: 1, flashStyle: "ak", bulletSize: 4.8, climb: true, kick: 0.05, stopScale: 1 }
+    case "mp5a3": return { name: "MP5A3", image: "assets/mp5a3.png", width: 80, height: 48, scale: 2.1, gripX: 33, gripY: 33, muzzleX: 60, muzzleY: 7.5, ejectX: 31, ejectY: 8, automatic: false, burst: 3, burstGap: 55, interval: 300, recoil: 5, particles: 5, power: 0.9, flashStyle: "mp5", bulletSize: 3.2, kick: 0.025, stopScale: 0.7 }
+    case "bazooka": return { name: "M20 Bazooka", image: "assets/bazooka-m20.png", width: 128, height: 32, scale: 2, gripX: 46, gripY: 24, muzzleX: 115, muzzleY: 12.5, automatic: false, interval: 500, recoil: 28, particles: 42, power: 1.8, fling: true, kick: 0.32, stopScale: 1.25 }
+    default: return { name: "Glock P80", image: "assets/glock-p80.png", width: 64, height: 48, scale: 2.2, gripX: 22, gripY: 34, muzzleX: 48, muzzleY: 11.5, ejectX: 31, ejectY: 14, automatic: false, interval: 220, recoil: 15, particles: 19, power: 1, bulletSize: 4.2, kick: 0.06, stopScale: 0.9 }
     }
   }
   readonly property string weaponName: spec.name
@@ -64,6 +68,11 @@ Item {
   property bool aimFlipped: false
   property bool gunPositioned: false
   property bool automaticHoldEngaged: false
+  // AK-47 muzzle climb in degrees: grows with each shot of a held burst, settles when released.
+  property real recoilClimb: 0
+  // MP5 burst shots still to come.
+  property int burstLeft: 0
+  property int bulletSerial: 0
   property real followDistance: 135
   property real recoil: 0
   property real flash: 0
@@ -87,7 +96,7 @@ Item {
   }
   function clearRoundEffects() {
     cancelSaber()
-    automaticHoldTimer.stop(); fireTimer.stop(); automaticHoldEngaged = false
+    automaticHoldTimer.stop(); fireTimer.stop(); burstTimer.stop(); burstLeft = 0; recoilClimb = 0; automaticHoldEngaged = false
     automaticSound.stop(); mp5AutomaticSound.stop()
     pistolSound.stop(); akSingleSound.stop(); mp5SingleSound.stop()
     revolverSound.stop(); bazookaLaunchSound.stop(); rocketExplosionSound.stop()
@@ -636,8 +645,8 @@ Item {
     bugHuntEnabled = enabled
   }
 
-  function hitBug(x0, y0, x1, y1, radius, weapon) {
-    return bugLayerLoader.item ? bugLayerLoader.item.hitProjectile(x0, y0, x1, y1, radius, weapon) : false
+  function hitBug(x0, y0, x1, y1, radius, weapon, pierceSerial) {
+    return bugLayerLoader.item ? bugLayerLoader.item.hitProjectile(x0, y0, x1, y1, radius, weapon, pierceSerial) : false
   }
 
   function arm(id) {
@@ -697,6 +706,7 @@ Item {
     automaticHoldEngaged = false
     automaticHoldTimer.stop()
     fireTimer.stop()
+    burstTimer.stop(); burstLeft = 0; recoilClimb = 0
     automaticSound.stop()
     mp5AutomaticSound.stop()
     recoil = 0
@@ -1068,6 +1078,7 @@ Item {
     automaticHoldEngaged = false
     automaticHoldTimer.stop()
     fireTimer.stop()
+    burstTimer.stop(); burstLeft = 0; recoilClimb = 0
     pistolSound.stop()
     akSingleSound.stop()
     automaticSound.stop()
@@ -1115,6 +1126,18 @@ Item {
     else if (weapon === "bazooka") bazookaLaunchSound.play()
     else pistolSound.play()
   }
+  // One click: a single shot, or the MP5's 3-round burst.
+  function fire() {
+    if (!spec.burst) return shoot()
+    if (burstTimer.running || burstCooldown.running) return false
+    if (!shoot()) return false
+    burstLeft = spec.burst - 1
+    burstTimer.interval = spec.burstGap
+    burstTimer.start()
+    burstCooldown.interval = spec.interval
+    burstCooldown.restart()
+    return true
+  }
   function shoot(withSound) {
     if (!armed || roundOver) return false
     if (weapon === "lightsaber") return igniteSaber()
@@ -1134,6 +1157,10 @@ Item {
     var angle = aimAngle * Math.PI / 180
     var cosA = Math.cos(angle)
     var sinA = Math.sin(angle)
+    // The AK's shots stray more the longer it has been climbing.
+    var shotAngle = spec.climb ? angle + (Math.random() - 0.5) * (0.6 + recoilClimb * 0.7) * Math.PI / 180 : angle
+    if (spec.climb) recoilClimb = Math.min(16, recoilClimb + 1.5)
+    if (bugHuntEnabled && bugLayerLoader.item) bugLayerLoader.item.kick(spec.kick || 0)
     var localMuzzleX = (spec.muzzleX - spec.gripX) * spec.scale
     var localMuzzleY = (spec.muzzleY - spec.gripY) * spec.scale * (aimFlipped ? -1 : 1)
     var muzzleX = gunX - recoil * cosA + localMuzzleX * cosA - localMuzzleY * sinA
@@ -1156,11 +1183,13 @@ Item {
       })
     }
     else {
-      var impact = firstDesktopImpact(muzzleX, muzzleY, cosA, sinA)
+      var shotCos = Math.cos(shotAngle), shotSin = Math.sin(shotAngle)
+      var impact = firstDesktopImpact(muzzleX, muzzleY, shotCos, shotSin)
       next.push({
         x: muzzleX, y: muzzleY,
-        vx: speed * cosA, vy: speed * sinA,
-        life: 1, size: 3.6 + spec.power * 0.6, bounces: 0, kind: 6, weapon: weapon,
+        vx: speed * shotCos, vy: speed * shotSin,
+        life: 1, size: spec.bulletSize || 3.6 + spec.power * 0.6, bounces: 0, kind: 6, weapon: weapon,
+        pierce: !!spec.pierce, serial: ++bulletSerial,
         impactX: impact ? impact.x : 0,
         impactY: impact ? impact.y : 0,
         impactRegionId: impact ? impact.regionId : "",
@@ -1700,7 +1729,7 @@ Item {
         root.automaticHoldEngaged = false
         if (root.spec.automatic) {
           automaticHoldTimer.restart()
-        } else root.shoot()
+        } else root.fire()
       }
       onReleased: function(event) {
         if (event.button === Qt.MiddleButton) {
@@ -1741,7 +1770,7 @@ Item {
       Text {
         id: hint
         anchors.centerIn: parent
-        text: root.weaponName + (root.weapon === "lightsaber" ? " · hold left-click to ignite · move to cut · right-click spin" : (root.spec.automatic ? " · click/hold to fire" : " · click to fire")) + (root.bugHuntEnabled ? "" : " · middle/Q-hold weapon wheel") + " · right-click spin · Esc holster"
+        text: root.weaponName + (root.weapon === "lightsaber" ? " · hold left-click to ignite · move to cut · right-click spin" : (root.spec.automatic ? " · click/hold to fire" : root.spec.burst ? " · click for a 3-round burst" : " · click to fire")) + (root.bugHuntEnabled ? "" : " · middle/Q-hold weapon wheel") + " · right-click spin · Esc holster"
         color: root.tint(root.foreground, 0.88)
         font.family: root.fontFamily
         font.pixelSize: 12
@@ -1806,6 +1835,15 @@ Item {
     repeat: true
     onTriggered: root.shoot(false)
   }
+  Timer {
+    id: burstTimer
+    repeat: true
+    onTriggered: {
+      if (root.burstLeft <= 0 || !root.shoot()) { stop(); root.burstLeft = 0; return }
+      if (--root.burstLeft <= 0) stop()
+    }
+  }
+  Timer { id: burstCooldown }
 
 
   RemoteSound {
@@ -1957,12 +1995,16 @@ Item {
         var targetY = root.pointerY - unitY * root.followDistance
         root.gunX += (targetX - root.gunX) * followBlend
         root.gunY += (targetY - root.gunY) * followBlend
-        root.aimAngle = Math.atan2(root.pointerY - root.gunY, root.pointerX - root.gunX) * 180 / Math.PI
+        var rawAngle = Math.atan2(root.pointerY - root.gunY, root.pointerX - root.gunX) * 180 / Math.PI
         // Hysteresis prevents rapid mirror-state chatter near vertical aim.
-        if (!root.aimFlipped && (root.aimAngle > 100 || root.aimAngle < -100)) root.aimFlipped = true
-        else if (root.aimFlipped && root.aimAngle > -80 && root.aimAngle < 80) root.aimFlipped = false
+        if (!root.aimFlipped && (rawAngle > 100 || rawAngle < -100)) root.aimFlipped = true
+        else if (root.aimFlipped && rawAngle > -80 && rawAngle < 80) root.aimFlipped = false
+        // Muzzle climb tips the barrel up, whichever way the gun faces.
+        root.aimAngle = rawAngle + (root.aimFlipped ? root.recoilClimb : -root.recoilClimb)
       }
     }
+    if (root.recoilClimb > 0 && !fireTimer.running)
+      root.recoilClimb = Math.max(0, root.recoilClimb - deltaSeconds * 45)
   }
 
   function simulateStep() {
@@ -2015,7 +2057,8 @@ Item {
         }
 
         var bulletRadius = p.size * 1.5
-        if (root.bugHuntEnabled && root.hitBug(previousX, previousY, p.x, p.y, bulletRadius, p.weapon)) continue
+        // A piercing round kills every fly on its path and flies on.
+        if (root.bugHuntEnabled && root.hitBug(previousX, previousY, p.x, p.y, bulletRadius, p.weapon, p.pierce ? p.serial : 0)) continue
         if (root.projectileHitsTarget(p, bulletRadius)) {
           root.hitTarget()
           continue
@@ -2188,7 +2231,7 @@ Item {
       var dy = root.pointerY - root.gunY
       var distance = Math.sqrt(dx * dx + dy * dy)
       var settled = !root.gunPositioned || distance <= 0.001 || Math.abs(distance - root.followDistance) < 0.01
-      if (settled && !root.saberHeld && root.saberIgnition === 0 && root.saberTrail.length === 0 && root.saberHeat.length === 0 && !trickAnimation.running && root.particles.length === 0 && root.pendingEffects.length === 0 && root.recoil === 0 && root.flash === 0) {
+      if (settled && root.recoilClimb === 0 && !root.saberHeld && root.saberIgnition === 0 && root.saberTrail.length === 0 && root.saberHeat.length === 0 && !trickAnimation.running && root.particles.length === 0 && root.pendingEffects.length === 0 && root.recoil === 0 && root.flash === 0) {
         root.simulationAwake = false
         root.simulationBlend = 1
       }

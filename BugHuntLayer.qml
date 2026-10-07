@@ -62,11 +62,17 @@ Item {
   readonly property real shakeX: 16 * trauma * trauma * (Math.sin(shakeTime * 71) + 0.5 * Math.sin(shakeTime * 113 + 1.7)) / 1.5
   readonly property real shakeY: 16 * trauma * trauma * (Math.sin(shakeTime * 83 + 0.6) + 0.5 * Math.sin(shakeTime * 127 + 3.1)) / 1.5
   Translate { id: worldShake; x: hunt.shakeX; y: hunt.shakeY }
+  // Heavier guns land harder: the weapon's stopScale stretches the hit-stop.
   function impact() {
     var burst = Math.max(1, burstCount)
-    var stop = burst >= 2 ? Math.min(0.13, 0.09 + 0.02 * (burst - 2)) : 0.035 + 0.008 * combo
+    var feel = arena.spec && arena.spec.stopScale !== undefined ? arena.spec.stopScale : 1
+    var stop = (burst >= 2 ? Math.min(0.13, 0.09 + 0.02 * (burst - 2)) : 0.035 + 0.008 * combo) * feel
     hitStop = Math.max(hitStop, stop)
-    trauma = Math.min(1, trauma + 0.12 + 0.05 * combo + (burst >= 2 ? 0.2 : 0))
+    trauma = Math.min(1, trauma + (0.12 + 0.05 * combo + (burst >= 2 ? 0.2 : 0)) * (0.7 + 0.3 * feel))
+  }
+  // Each shot nudges the play area by the weapon's kick: a thump for the Colt, a tick for the MP5.
+  function kick(amount) {
+    if (amount > 0 && acceptHits()) trauma = Math.min(1, trauma + amount)
   }
   // A new hunt opens on a briefing card; the first left-click starts the countdown.
   property bool briefing: false
@@ -127,12 +133,14 @@ Item {
     combo = round.combo; bestCombo = round.bestCombo
     if (comboBreaking) { comboBreak.stop(); comboValue.shake = 0; comboBreaking = false }
     showPopup(x, y, round.score - before, round.combo, golden)
-    // Bullets hit one fly each, so only blasts and saber sweeps can multi-kill.
-    var window = source === "saber" ? 250 : source === "blast" ? 40 : -1
+    // Blasts, saber sweeps and one piercing Colt round ("pierce:<serial>") can multi-kill.
+    var piercing = source.indexOf("pierce:") === 0
+    var window = source === "saber" ? 250 : source === "blast" ? 40 : piercing ? 5000 : -1
     if (source === burstSource && now - burstLast <= window) burstCount++
     else burstCount = 1
     burstSource = source; burstLast = now
-    if (burstCount >= 2) multiKillText.show(multiKillNames[Math.min(4, burstCount)])
+    if (burstCount >= 2) multiKillText.show(piercing ? (burstCount > 2 ? "COLLATERAL ×" + burstCount + "!" : "COLLATERAL!")
+                                            : multiKillNames[Math.min(4, burstCount)])
     impact()
   }
   function breakCombo() {
@@ -254,10 +262,23 @@ Item {
     volume: 0.45
   }
 
-  function hitProjectile(x0, y0, x1, y1, radius, weapon) {
+  // A bullet's path this step against every fly. Ordinary rounds stop in the
+  // first fly; a piercing round (pierceSerial > 0) kills each fly on its path
+  // and is not stopped, so it can line up more on later steps and bounces.
+  function hitProjectile(x0, y0, x1, y1, radius, weapon, pierceSerial) {
     var dx = x1 - x0, dy = y1 - y0
     var lengthSquared = dx * dx + dy * dy
     if (!hunt.acceptHits()) return false
+    if (pierceSerial > 0) {
+      for (var p = 0; p < flies.count; p++) {
+        var target = flies.itemAt(p)
+        if (!target || !target.alive) continue
+        var u = lengthSquared ? Math.max(0, Math.min(1, ((target.x - x0) * dx + (target.y - y0) * dy) / lengthSquared)) : 0
+        var px = x0 + u * dx - target.x, py = y0 + u * dy - target.y
+        if (px * px + py * py <= Math.pow(radius + 19, 2)) target.hit("pierce:" + pierceSerial, weapon, dx, dy)
+      }
+      return false
+    }
     var nearest = null, nearestT = 2
     for (var i = 0; i < flies.count; i++) {
       var fly = flies.itemAt(i)
@@ -276,6 +297,17 @@ Item {
     for (var i = 0; i < flies.count; i++) {
       var fly = flies.itemAt(i)
       if (fly && fly.alive && Math.pow(fly.x - x, 2) + Math.pow(fly.y - y, 2) <= Math.pow(radius + 19, 2)) fly.hit("blast", weapon, fly.x - x, fly.y - y)
+    }
+    // The M20's shockwave flings the flies just outside it, spinning.
+    if (weapon !== "bazooka") return
+    for (var j = 0; j < flies.count; j++) {
+      var near = flies.itemAt(j)
+      if (!near || !near.alive) continue
+      var ox = near.x - x, oy = near.y - y, distance = Math.sqrt(ox * ox + oy * oy)
+      var reach = (radius + 19) * 2.2
+      if (distance > reach) continue
+      var push = 1 - distance / reach
+      near.fling(ox / Math.max(1, distance), oy / Math.max(1, distance), 600 + 1100 * push)
     }
   }
 
@@ -561,11 +593,19 @@ Item {
       property real sparkleClock: 0
       // A golden fly that outlived goldenLife heads off screen and is gone.
       property bool leaving: false
+      // Flung by a rocket's shockwave: it tumbles out of control for `stun` seconds.
+      property real stun: 0
+      property real wobble: 0
+      property real wobbleRate: 0
+      function fling(nx, ny, speed) {
+        vx = nx * speed; vy = ny * speed - 120
+        stun = 0.55; wobbleRate = (Math.random() < 0.5 ? -1 : 1) * (700 + Math.random() * 500)
+      }
       transform: worldShake
 
       function frame() { return Math.floor(hunt.wingTime * (28 + index * 2)) % 8 }
       function reset() {
-        alive = false; respawnTime = index * 0.12; golden = false; leaving = false
+        alive = false; respawnTime = index * 0.12; golden = false; leaving = false; stun = 0; wobble = 0
         splatFade.stop(); splat.opacity = 0
       }
       function randomX() { return Math.min(hunt.width / 2, 65) + Math.random() * Math.max(0, hunt.width - 130) }
@@ -603,6 +643,22 @@ Item {
           respawnTime -= dt
           if (respawnTime <= 0) spawn()
           return
+        }
+        if (stun > 0) {
+          // No steering: drag, a bounce off the screen edges, and a spin that unwinds.
+          stun -= dt
+          vx *= Math.exp(-dt * 3.2); vy *= Math.exp(-dt * 3.2)
+          x += vx * dt; y += vy * dt
+          if ((x < 35 && vx < 0) || (x > hunt.width - 35 && vx > 0)) vx = -vx * 0.6
+          if ((y < 45 && vy < 0) || (y > hunt.height - 35 && vy > 0)) vy = -vy * 0.6
+          x = Math.max(35, Math.min(hunt.width - 35, x)); y = Math.max(45, Math.min(hunt.height - 35, y))
+          wobble += wobbleRate * dt
+          if (stun <= 0) { entering = false; chooseDestination() }
+          return
+        }
+        if (wobble !== 0) {
+          var unwound = wobble % 360
+          wobble = Math.abs(unwound) < 8 ? 0 : unwound * Math.exp(-dt * 10)
         }
         if (golden) {
           goldenAge += dt
@@ -684,6 +740,7 @@ Item {
         currentFrame: Math.floor(hunt.wingTime * frameRate) % frameCount
         running: fly.alive && hunt.visible
         visible: fly.alive
+        rotation: fly.wobble
         opacity: 1
         transform: Scale { origin.x: 44; origin.y: 54; xScale: fly.facingLeft ? -1 : 1 }
       }
