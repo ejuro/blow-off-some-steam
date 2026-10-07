@@ -771,6 +771,7 @@ Item {
     workspaceQueryProcess.exec(["/usr/bin/hyprctl", "monitors", "-j"])
     wallpaperQueryProcess.exec(["/usr/bin/readlink", "-f", "--", Quickshell.env("HOME") + "/.local/state/omarchy/current/background"])
     captureDelay.restart()
+    captureWatchdog.restart()
   }
   function swapWeapon(id) {
     cancelSaber()
@@ -818,6 +819,7 @@ Item {
   function finishCapture() {
     if (!captureInProgress) return
     captureInProgress = false
+    captureWatchdog.stop()
     var id = pendingWeapon
     pendingWeapon = ""
     equip(id, true)
@@ -826,6 +828,9 @@ Item {
     if (!captureInProgress) return
     captureInProgress = false
     captureDelay.stop()
+    captureWatchdog.stop()
+    clientQueryProcess.running = false
+    workspaceQueryProcess.running = false
     captureError = message
     var id = pendingWeapon
     pendingWeapon = ""
@@ -1145,6 +1150,7 @@ Item {
     captureInProgress = false
     pendingWeapon = ""
     captureDelay.stop()
+    captureWatchdog.stop()
     if (captureProcess.running) captureProcess.running = false
     weaponWheelOpen = false
     weaponWheelSelection = -1
@@ -2336,6 +2342,14 @@ Item {
     }
   }
 
+  // A compositor query that never answers must not leave the weapon waiting
+  // for ever. Longer than the capture helper's own 15 s limit, so a failed
+  // capture still reports itself first.
+  Timer {
+    id: captureWatchdog
+    interval: 20000
+    onTriggered: root.abortCapture("Desktop capture timed out")
+  }
   Timer {
     id: captureDelay
     // The drawer's layer surface needs several compositor frames to be fully
