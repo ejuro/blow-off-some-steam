@@ -71,6 +71,14 @@ ShellRoot {
         check(miss < 2 && ax * shot.vx + ay * shot.vy > -1e9, guns[gi] + (side ? " facing left" : " facing right") + " shoots at the cursor (off by " + miss.toFixed(1) + " px)")
       }
     }
+    // The Colt is thrown back and its barrel flips up, for the look only, and it eases back.
+    arena.swapWeapon("revolver")
+    arena.gunPositioned = true; arena.gunX = 300; arena.gunY = 400; arena.pointerX = 600; arena.pointerY = 400
+    for (var cs = 0; cs < 120; cs++) arena.advanceWeapon(0.016)
+    var trueAim = arena.aimAngle
+    check(arena.fire() && arena.recoil === 46 && arena.renderAimAngle < trueAim - 10 && arena.aimAngle === trueAim, "the Colt kicks back and flips up without moving the aim")
+    for (var st = 0; st < 6; st++) arena.simulateStep()
+    check(arena.recoil > 20, "the Colt slides back slowly: " + arena.recoil)
     arena.swapWeapon("glock")
     // Signatures. Colt: one round kills every fly on its path and keeps flying.
     arena.swapWeapon("revolver")

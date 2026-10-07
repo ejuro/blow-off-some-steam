@@ -49,10 +49,13 @@ Item {
     switch (weapon) {
     // Each gun has a signature: the Colt's rounds pierce every fly in line,
     // the AK climbs and spreads while held, the MP5 fires tight 3-round
-    // bursts, and the M20's blast flings the flies it misses. kick shakes
+    // bursts, and the M20's blast flings the flies it misses. The Colt is also
+    // thrown back hard: recoilReturn slows how fast a gun slides back (per 16 ms
+    // step) and recoilFlip tips the barrel up by that many degrees per pixel of
+    // recoil, for the look only; shots still go to the cursor. kick shakes
     // the Fly Hunt play area on each shot; stopScale sizes a kill's hit-stop.
     case "lightsaber": return { name: "Lightsaber", image: "", width: 96, height: 24, scale: 2.0, gripX: 12, gripY: 12, muzzleX: 92, muzzleY: 12, automatic: false, interval: 460, recoil: 0, particles: 0, power: 1, ejectsCase: false, kick: 0, stopScale: 1 }
-    case "revolver": return { name: "Colt 45", image: "assets/revolver-colt45.png", width: 64, height: 32, scale: 2.2, gripX: 20, gripY: 25, muzzleX: 47, muzzleY: 12.5, automatic: false, interval: 280, recoil: 24, particles: 25, power: 1.25, ejectsCase: false, flashStyle: "revolver", bulletSize: 5.6, pierce: true, kick: 0.24, stopScale: 1.7 }
+    case "revolver": return { name: "Colt 45", image: "assets/revolver-colt45.png", width: 64, height: 32, scale: 2.2, gripX: 20, gripY: 25, muzzleX: 47, muzzleY: 12.5, automatic: false, interval: 280, recoil: 46, particles: 25, power: 1.25, ejectsCase: false, flashStyle: "revolver", bulletSize: 5.6, pierce: true, kick: 0.24, stopScale: 1.7, recoilReturn: 0.9, recoilFlip: 0.3 }
     case "ak47": return { name: "AK-47", image: "assets/ak47.png", width: 96, height: 48, scale: 2, gripX: 35, gripY: 33, muzzleX: 79, muzzleY: 9.5, ejectX: 45, ejectY: 12, automatic: true, interval: 82, recoil: 17, particles: 8, power: 1, flashStyle: "ak", bulletSize: 4.8, climb: true, kick: 0.08, stopScale: 1 }
     case "mp5a3": return { name: "MP5A3", image: "assets/mp5a3.png", width: 80, height: 48, scale: 2.1, gripX: 33, gripY: 33, muzzleX: 60, muzzleY: 7.5, ejectX: 31, ejectY: 8, automatic: false, burst: 3, burstGap: 55, interval: 300, recoil: 5, particles: 5, power: 0.9, flashStyle: "mp5", bulletSize: 3.2, kick: 0.025, stopScale: 0.7 }
     case "bazooka": return { name: "M20 Bazooka", image: "assets/bazooka-m20.png", width: 128, height: 32, scale: 2, gripX: 46, gripY: 24, muzzleX: 115, muzzleY: 12.5, automatic: false, interval: 500, recoil: 28, particles: 42, power: 1.8, fling: true, kick: 0.32, stopScale: 1.25 }
@@ -1955,7 +1958,7 @@ Item {
   property real previousFlash: 0
   readonly property real renderGunX: gunX
   readonly property real renderGunY: gunY
-  readonly property real renderAimAngle: aimAngle
+  readonly property real renderAimAngle: aimAngle + (spec.recoilFlip ? renderRecoil * spec.recoilFlip * (aimFlipped ? 1 : -1) : 0)
   readonly property real renderRecoil: simulationAwake ? previousRecoil + (recoil - previousRecoil) * simulationBlend : recoil
   readonly property real renderFlash: simulationAwake ? previousFlash + (flash - previousFlash) * simulationBlend : flash
 
@@ -2018,7 +2021,7 @@ Item {
     previousRecoil = recoil
     previousFlash = flash
     var hadParticleWork = root.particles.length > 0 || root.pendingEffects.length > 0
-    root.recoil *= 0.72
+    root.recoil *= root.spec.recoilReturn || 0.72
     root.flash *= 0.56
     if (root.recoil < 0.05) root.recoil = 0
     if (root.flash < 0.02) root.flash = 0
