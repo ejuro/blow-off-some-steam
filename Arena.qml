@@ -12,7 +12,11 @@ Item {
   property bool armed: false
   readonly property var audio: audioBridge
   property bool audioPreviewActive: false
-  AudioBridge { id: audioBridge; active: root.armed || root.audioPreviewActive }
+  // Muted from the drawer: the audio worker isn't started at all.
+  AudioBridge { id: audioBridge; active: (root.armed || root.audioPreviewActive) && !root.soundMuted }
+  Preferences { id: preferences }
+  readonly property bool soundMuted: preferences.muted
+  function setSoundMuted(muted) { preferences.setMuted(muted) }
   property bool destructionEnabled: false
   property var targetScreen: null
   property bool captureInProgress: false

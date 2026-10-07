@@ -20,6 +20,8 @@ ShellRoot {
     property bool targetsEnabled: false
     property bool bugHuntEnabled: false
     property string mode: "free"
+    property bool soundMuted: false
+    function setSoundMuted(muted) { soundMuted = muted }
     function setMode(name) { mode = name }
     function weaponNames(ids) { return ids.join() }
   }
@@ -39,6 +41,11 @@ ShellRoot {
   Timer { id: prompt; interval: 50; onTriggered: {
     check(drawer.opened && drawer.doorsOpen, "doors open promptly without audio")
     check(audio.plays === 0, "opening plays no sound")
+    // The sound button mutes quietly and answers with a sound when turned back on.
+    drawer.toggleSound()
+    check(fake.soundMuted && audio.plays === 0, "muting plays nothing")
+    drawer.toggleSound()
+    check(!fake.soundMuted && audio.plays === 1, "unmuting plays the hover sound")
     drawer.close()
     check(!drawer.doorsOpen, "closing shuts the doors")
     // Fly Hunt shows each weapon's best on its card and in the high scores list.

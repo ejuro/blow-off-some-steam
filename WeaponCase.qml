@@ -18,6 +18,7 @@ Panel {
   property string pendingWeapon: ""
   readonly property string mode: arena ? arena.mode : "free"
   readonly property var bests: arena ? arena.flyRecords.bests : ({})
+  readonly property bool soundMuted: arena ? arena.soundMuted : false
   readonly property var modes: [
     { id: "free", label: "Free play", detail: "no goal, just steam" },
     { id: "targets", label: "Targets", detail: "roaming bullseye" },
@@ -57,6 +58,12 @@ Panel {
   function playWeaponHover() {
     weaponHoverSound.stop()
     weaponHoverSound.play()
+  }
+  function toggleSound() {
+    if (!arena) return
+    arena.setSoundMuted(!soundMuted)
+    // Turning it back on answers with the hover sound once the audio is up.
+    if (!soundMuted) playWeaponHover()
   }
   function choose(id) {
     if (launching) return
@@ -288,14 +295,37 @@ Panel {
           id: content
           width: parent.width
           spacing: Style.space(12)
-          Text {
-            anchors.horizontalCenter: parent.horizontalCenter
-            text: "BLOW OFF SOME STEAM"
-            color: root.foreground
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.heading
-            font.bold: true
-            font.letterSpacing: 1.5
+          Item {
+            width: parent.width
+            height: Math.max(title.implicitHeight, soundButton.height)
+            Text {
+              id: title
+              anchors.centerIn: parent
+              text: "BLOW OFF SOME STEAM"
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.heading
+              font.bold: true
+              font.letterSpacing: 1.5
+            }
+            // Sound on/off; remembered between sessions.
+            MenuButton {
+              id: soundButton
+              objectName: "soundButton"
+              ui: root
+              anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              width: Style.space(28); height: Style.space(28)
+              Accessible.name: root.soundMuted ? "Turn sound on" : "Mute sound"
+              onClicked: root.toggleSound()
+              Text {
+                anchors.centerIn: parent
+                text: root.soundMuted ? "󰖁" : "󰕾"
+                color: root.soundMuted ? Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.5) : root.foreground
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.heading
+              }
+            }
           }
           Text {
             anchors.horizontalCenter: parent.horizontalCenter
