@@ -108,6 +108,21 @@ ShellRoot {
     check(arena.recoilClimb >= 8, "the AK climbs as it fires: " + arena.recoilClimb)
     arena.advanceWeapon(1)
     check(arena.recoilClimb === 0, "the climb settles once the trigger is released")
+    // A first shot goes where it points; a long spray scatters widely.
+    function scatter(climb) {
+      var worst = 0
+      for (var n = 0; n < 150; n++) {
+        arena.recoilClimb = climb; arena.particles = []
+        arena.shoot(false)
+        var round = arena.particles.filter(function(p) { return p.kind === 6 })[0]
+        var off = Math.abs(((Math.atan2(round.vy, round.vx) * 180 / Math.PI - arena.aimAngle) % 360 + 540) % 360 - 180)
+        worst = Math.max(worst, off)
+      }
+      return worst
+    }
+    var tight = scatter(0), wide = scatter(22)
+    arena.recoilClimb = 0
+    check(tight < 0.5 && wide > 12 && wide < 16.5, "AK spread grows with the spray: " + tight.toFixed(2) + " / " + wide.toFixed(1) + " deg")
     // MP5: a click is a 3-round burst, and the next one waits for the cooldown.
     arena.swapWeapon("mp5a3")
     check(arena.fire() && arena.burstLeft === 2 && !arena.fire(), "the MP5 fires 3-round bursts")

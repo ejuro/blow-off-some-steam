@@ -1168,8 +1168,9 @@ Item {
     var angle = aimAngle * Math.PI / 180
     var cosA = Math.cos(angle)
     var sinA = Math.sin(angle)
-    // The AK's shots stray more the longer it has been climbing.
-    var shotAngle = spec.climb ? angle + (Math.random() - 0.5) * (0.6 + recoilClimb * 0.8) * Math.PI / 180 : angle
+    // The AK's shots stray more the longer it has been climbing: within 0.3
+    // degrees on the first shot, up to about 16 either way on a long spray.
+    var shotAngle = spec.climb ? angle + (Math.random() * 2 - 1) * (0.3 + recoilClimb * 0.7) * Math.PI / 180 : angle
     if (spec.climb) recoilClimb = Math.min(22, recoilClimb + 2.3)
     if (bugHuntEnabled && bugLayerLoader.item) bugLayerLoader.item.kick(spec.kick || 0)
     var localMuzzleX = (spec.muzzleX - spec.gripX) * spec.scale
